@@ -8,7 +8,9 @@ declare const self: {
   skipWaiting(): void;
   registration: { showNotification(title: string, opts?: object): Promise<void> };
   clients: {
-    matchAll(opts?: object): Promise<Array<{ focus(): Promise<unknown>; url: string }>>;
+    matchAll(
+      opts?: object
+    ): Promise<Array<{ focus(): Promise<unknown>; url: string; postMessage(msg: unknown): void }>>;
     openWindow(url: string): Promise<unknown>;
   };
   addEventListener(type: string, handler: (event: never) => void): void;
@@ -45,13 +47,23 @@ self.addEventListener("push", (event: { data?: { json(): PushPayload }; waitUnti
 
 self.addEventListener(
   "notificationclick",
-  (event: { notification: { close(): void }; waitUntil(p: Promise<unknown>): void }) => {
+  (event: {
+    notification: { close(): void; data?: PushPayload };
+    waitUntil(p: Promise<unknown>): void;
+  }) => {
+    // The payload always carries which aircraft triggered the ping — without
+    // reading it, tapping "something rare is inbound" just opened whatever
+    // screen the app happened to be on, instead of that contact.
+    const hex = event.notification.data?.hex;
     event.notification.close();
     event.waitUntil(
       self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
         const existing = clients[0];
-        if (existing) return existing.focus();
-        return self.clients.openWindow("/");
+        if (existing) {
+          if (hex) existing.postMessage({ type: "focus-contact", hex });
+          return existing.focus();
+        }
+        return self.clients.openWindow(hex ? `/?focus=${encodeURIComponent(hex)}` : "/");
       })
     );
   }

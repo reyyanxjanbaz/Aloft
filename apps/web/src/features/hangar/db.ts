@@ -43,9 +43,24 @@ export async function setSeenAchievements(ids: Set<string>): Promise<void> {
   await database.put("meta", [...ids], "seenAchievements");
 }
 
+/**
+ * Local calendar day as yyyymmdd — matches how `streakDays` (also local-time)
+ * groups catches into days, so the hangar's dedup key and the streak badge
+ * agree on what "today" means. A UTC-based key here previously disagreed
+ * with the local-time streak calculation for any player not in UTC+0,
+ * letting the same real-world day double-count near local midnight.
+ */
+function localDayKey(ts: number): string {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+}
+
 export function entryFromCatch(validated: ValidatedCatch): HangarEntry {
   const ac = validated.aircraft;
-  const day = new Date(validated.caughtAt).toISOString().slice(0, 10).replaceAll("-", "");
+  const day = localDayKey(validated.caughtAt);
   return {
     id: `${ac.hex}:${ac.callsign || "----"}:${day}`,
     hex: ac.hex,
@@ -66,8 +81,16 @@ export function entryFromCatch(validated: ValidatedCatch): HangarEntry {
 /** Returns isNew=false when this airframe+flight+day was already in the hangar. */
 export async function saveCatch(entry: HangarEntry): Promise<{ isNew: boolean }> {
   const database = await db();
-  const existing = await database.get("catches", entry.id);
-  await database.put("catches", entry);
+  // One transaction spans the read and the write. Two separate `db.get`
+  // then `db.put` calls each open their own transaction, leaving a gap where
+  // an overlapping saveCatch() (e.g. two tabs on the same catch) could both
+  // observe "not found" and both report isNew:true. IndexedDB serializes
+  // readwrite transactions against the same store, so this read+write pair
+  // is atomic relative to any other transaction touching "catches".
+  const tx = database.transaction("catches", "readwrite");
+  const existing = await tx.store.get(entry.id);
+  await tx.store.put(entry);
+  await tx.done;
   return { isNew: !existing };
 }
 

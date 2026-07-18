@@ -33,6 +33,17 @@ export type ClientMessage = {
    * capture what is within CAPTURE_RADIUS_KM.
    */
   viewRadiusKm: number;
+  /**
+   * Optional player identity, so the server can remember where this player's
+   * device last reported itself — used to sanity-check that a later /catch
+   * claim was made from somewhere the player actually was, not just
+   * somewhere an aircraft happened to be. Ignored server-side unless
+   * `playerToken` also proves ownership of `playerId` — otherwise anyone
+   * could poison another player's tracked position over an unauthenticated
+   * WS message and cause that player's real catches to be wrongly rejected.
+   */
+  playerId?: string;
+  playerToken?: string;
 };
 
 /** Server → client messages. */

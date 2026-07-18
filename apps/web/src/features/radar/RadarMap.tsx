@@ -86,6 +86,13 @@ export function RadarMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    // Guards the async chain below: aircraftImage() decodes an SVG data URI
+    // over a few event-loop turns, and if the component unmounts in that
+    // window (a fast tab switch), `map.remove()` in this effect's cleanup
+    // has already torn the map down by the time `.finally()` runs — without
+    // this flag, addSource/addLayer would throw on the removed instance.
+    let cancelled = false;
+
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: STYLE_URL,
@@ -107,6 +114,7 @@ export function RadarMap({
           /* falls back to the circle layer below */
         })
         .finally(() => {
+          if (cancelled) return;
           const { lat, lon } = posRef.current;
 
           map.addSource("rings", { type: "geojson", data: rangeRings(lat, lon) });
@@ -240,6 +248,7 @@ export function RadarMap({
     }
 
     return () => {
+      cancelled = true;
       observer.disconnect();
       readyRef.current = false;
       map.remove();
@@ -268,7 +277,7 @@ export function RadarMap({
 
   // Recenter on demand from the scope control.
   useEffect(() => {
-    if (!recenterSignal) return;
+    if (!recenterSignal || !readyRef.current) return;
     mapRef.current?.easeTo({
       center: [posRef.current.lon, posRef.current.lat],
       zoom: 9,

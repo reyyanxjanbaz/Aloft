@@ -63,9 +63,18 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
   useEffect(() => {
     if (!armed) return;
     let stream: MediaStream | null = null;
+    let cancelled = false;
     navigator.mediaDevices
       ?.getUserMedia({ video: { facingMode: "environment" } })
       .then((s) => {
+        if (cancelled) {
+          // Unmounted before the permission prompt / init resolved — stop
+          // immediately, otherwise nothing ever does: the cleanup below
+          // already ran and saw `stream === null`, so the camera (and its OS
+          // recording indicator) would otherwise stay live indefinitely.
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
         stream = s;
         if (videoRef.current) {
           videoRef.current.srcObject = s;
@@ -73,7 +82,10 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
         }
       })
       .catch(() => setCameraOn(false));
-    return () => stream?.getTracks().forEach((t) => t.stop());
+    return () => {
+      cancelled = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
   }, [armed]);
 
   useEffect(() => {
@@ -81,6 +93,10 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
     let raf = 0;
     let last = performance.now();
     let readoutAcc = 0;
+    // Set on unmount so a /catch request already in flight when the player
+    // exits (or the reticle re-locks after a fast re-entry) can't call go()
+    // or touch state for a screen that's no longer showing.
+    let cancelled = false;
 
     const submit = async () => {
       sfxCapture();
@@ -91,9 +107,11 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
           body: JSON.stringify({ hex, lat: position.lat, lon: position.lon, ts: Date.now() }),
         });
         const body = (await res.json()) as CatchResponse;
+        if (cancelled) return;
         if (body.ok) {
           const entry = entryFromCatch(body.catch);
           const { isNew } = await saveCatch(entry);
+          if (cancelled) return;
           go({ name: "reveal", entry, isNew, firstSpotter: body.firstSpotter === true });
         } else {
           setFailure(body.reason);
@@ -101,6 +119,7 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
           submittingRef.current = false;
         }
       } catch {
+        if (cancelled) return;
         setFailure("Lost the link to the tower. Hold aim to try again.");
         progressRef.current = 0;
         submittingRef.current = false;
@@ -198,7 +217,10 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
     };
 
     raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
   }, [armed, hex, position.lat, position.lon, aimRef, go]);
 
   // Drag-to-aim fallback for devices without a compass.
@@ -313,8 +335,10 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
             <div className="readout">
               <span className="label">Elevation</span>
               <span className="readout__value">
-                {readouts ? Math.round(readouts.elevation) : "—"}{" "}
-                <span className="unit">up</span>
+                {readouts ? Math.round(Math.abs(readouts.elevation)) : "—"}{" "}
+                <span className="unit">
+                  {!readouts || readouts.elevation === 0 ? "level" : readouts.elevation > 0 ? "up" : "down"}
+                </span>
               </span>
             </div>
           </div>

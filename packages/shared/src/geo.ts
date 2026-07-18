@@ -13,7 +13,10 @@ export function distanceM(lat1: number, lon1: number, lat2: number, lon2: number
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
+  // atan2 form, not asin(sqrt(a)): floating-point rounding can push `a`
+  // fractionally above 1 for near-antipodal points, which would make
+  // asin return NaN. atan2 stays well-defined across the whole range.
+  return 2 * EARTH_RADIUS_M * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
 }
 
 /** Initial bearing from point 1 to point 2, degrees clockwise from true north (0–360). */
@@ -31,7 +34,9 @@ export function bearingDeg(lat1: number, lon1: number, lat2: number, lon2: numbe
  * Ground distance uses the great circle; height difference is in meters.
  */
 export function elevationDeg(groundDistanceM: number, observerAltM: number, targetAltM: number): number {
-  if (groundDistanceM <= 0) return 90;
+  // atan2 already returns the correct signed angle at zero ground distance
+  // (+90 above, -90 below, 0 level) — a special-cased `return 90` here would
+  // be wrong whenever the target is at or below the observer directly overhead.
   return deg(Math.atan2(targetAltM - observerAltM, groundDistanceM));
 }
 
@@ -66,6 +71,8 @@ export function angleDiffDeg(a: number, b: number): number {
  * Returns [lat, lon].
  */
 export function deadReckon(lat: number, lon: number, track: number, gsKt: number, dtSec: number): [number, number] {
-  if (!gsKt || dtSec <= 0) return [lat, lon];
+  // `!(gsKt > 0)` also rejects NaN and negative speeds (a corrupted reading
+  // would otherwise project the aircraft backward along its track).
+  if (!(gsKt > 0) || dtSec <= 0) return [lat, lon];
   return destinationPoint(lat, lon, track, gsKt * KT_TO_MS * dtSec);
 }

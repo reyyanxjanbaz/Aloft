@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PushSubscription } from "web-push";
@@ -54,8 +55,33 @@ export class PushStore {
     return this.subs.size;
   }
 
+  private persistTimer: NodeJS.Timeout | null = null;
+
+  /** Debounced async rewrite — see SocialStore.persist for why. */
   persist(): void {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      void this.writeNow();
+    }, 250);
+    this.persistTimer.unref?.();
+  }
+
+  private async writeNow(): Promise<void> {
     mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(SUBS_FILE, JSON.stringify(this.all(), null, 2));
+    try {
+      await writeFile(SUBS_FILE, JSON.stringify(this.all(), null, 2));
+    } catch (err) {
+      console.error("[push] failed to persist subscriptions — will retry on next change:", err);
+    }
+  }
+
+  /** Bypasses the debounce and writes immediately — call before process exit. */
+  async flush(): Promise<void> {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    await this.writeNow();
   }
 }

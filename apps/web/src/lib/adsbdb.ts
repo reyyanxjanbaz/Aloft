@@ -33,7 +33,9 @@ export async function lookupRoute(callsign: string): Promise<FlightRoute | null>
     cache.set(key, route);
     return route;
   } catch {
-    cache.set(key, null);
+    // A network/HTTP failure isn't a genuine "no route" answer from the API —
+    // don't cache it, so a transient blip doesn't permanently deny route info
+    // this callsign's next lookup would have happily returned.
     return null;
   }
 }

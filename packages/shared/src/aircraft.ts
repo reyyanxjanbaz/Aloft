@@ -10,7 +10,9 @@ const WIDEBODIES = new Set([
   "MD11", "IL76",
 ]);
 const TURBOPROP_PREFIXES = ["AT4", "AT7", "DH8", "SF3", "SW4", "F50", "E110"];
-// "C17" the prefix matches Cessna 172/177; the exact designator C17 (Globemaster) is excluded below.
+// "C17" the prefix matches Cessna 172/177. The Globemaster (exact designator
+// "C17") never reaches this check — it's already returned as "quad" above —
+// but the prefix match is kept explicit in case QUADS is ever edited.
 const GA_PREFIXES = ["P28", "C15", "C16", "C17", "C18", "C20", "C21", "SR2", "DA4", "DA2", "PA2", "PA3", "BE3", "BE5", "RV", "GLID"];
 
 export function familyOf(typeIcao?: string): Family {

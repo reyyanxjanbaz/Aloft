@@ -97,14 +97,21 @@ export async function startBackgroundLocation(
 export async function registerNativePush(): Promise<string | null> {
   const push = plugin("PushNotifications");
   if (!isNative() || !push?.register) return null;
-  const permission = (await push.requestPermissions?.()) as { receive?: string } | undefined;
-  if (permission?.receive !== "granted") return null;
-  await push.register();
-  return new Promise<string | null>((resolve) => {
-    const timeout = setTimeout(() => resolve(null), 8000);
-    void push.addListener?.("registration", (token: unknown) => {
-      clearTimeout(timeout);
-      resolve((token as { value?: string })?.value ?? null);
+  try {
+    const permission = (await push.requestPermissions?.()) as { receive?: string } | undefined;
+    if (permission?.receive !== "granted") return null;
+    await push.register();
+    return await new Promise<string | null>((resolve) => {
+      const timeout = setTimeout(() => resolve(null), 8000);
+      void push.addListener?.("registration", (token: unknown) => {
+        clearTimeout(timeout);
+        resolve((token as { value?: string })?.value ?? null);
+      });
     });
-  });
+  } catch {
+    // Native registration can throw (restricted entitlements, a native-side
+    // error) — fail soft like every other function in this module rather
+    // than becoming an unhandled rejection in whatever screen calls this.
+    return null;
+  }
 }

@@ -43,7 +43,8 @@ app.post<{ Body: SubscribeBody }>("/push/subscribe", async (req, reply) => {
     !subscription.keys?.p256dh ||
     !subscription.keys?.auth ||
     !Number.isFinite(lat) ||
-    !Number.isFinite(lon)
+    !Number.isFinite(lon) ||
+    (radiusKm !== undefined && !Number.isFinite(radiusKm))
   ) {
     return reply.code(400).send({ ok: false, reason: "expected {subscription, lat, lon}" });
   }
@@ -68,8 +69,8 @@ app.get<{ Querystring: { lat?: string; lon?: string; radiusKm?: string } }>(
     const lat = Number(req.query.lat);
     const lon = Number(req.query.lon);
     const radiusKm = Number(req.query.radiusKm ?? CAPTURE_RADIUS_KM);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      return reply.code(400).send({ error: "lat and lon are required numbers" });
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(radiusKm) || radiusKm <= 0) {
+      return reply.code(400).send({ error: "lat, lon and radiusKm must be finite numbers, radiusKm > 0" });
     }
     const aircraft = await hub.query(lat, lon, radiusKm);
     return { now: Date.now(), count: aircraft.length, aircraft };
@@ -87,12 +88,26 @@ app.post<{ Body: CatchRequest }>("/catch", async (req, reply) => {
   ) {
     return reply.code(400).send({ ok: false, reason: "expected {hex, lat, lon, ts}" });
   }
-  const result = hub.validateCatch(hex, lat, lon, ts);
+
+  // Identity is optional (an anonymous/offline catch still validates against
+  // the aircraft), but if a player id is claimed, the request must prove
+  // ownership of it before the catch can be attributed — otherwise anyone
+  // who knows another player's id (visible to friends via /friends,
+  // /activity) could record catches, and burn their first-spotter credit,
+  // under that player's name.
+  const playerIdHeader = req.headers["x-player-id"];
+  const tokenHeader = req.headers["x-player-token"];
+  const playerId = typeof playerIdHeader === "string" ? playerIdHeader : undefined;
+  const token = typeof tokenHeader === "string" ? tokenHeader : undefined;
+  if (playerId && !social.verifyToken(playerId, token)) {
+    return reply.code(401).send({ ok: false, reason: "invalid or missing player token" });
+  }
+
+  const result = hub.validateCatch(hex, lat, lon, ts, playerId);
   if (!result.ok) return reply.code(422).send(result);
 
   // Record it against the player so friends' hangars and first-spotter work.
-  const playerId = req.headers["x-player-id"];
-  if (typeof playerId === "string" && social.get(playerId)) {
+  if (playerId && social.get(playerId)) {
     const ac = result.catch.aircraft;
     const day = new Date(result.catch.caughtAt).toISOString().slice(0, 10).replaceAll("-", "");
     const catchId = `${ac.hex}:${ac.callsign || "----"}:${day}`;
@@ -125,11 +140,19 @@ app.register(async (instance) => {
         Number.isFinite(msg.lon) &&
         Number.isFinite(msg.viewRadiusKm)
       ) {
+        // Only trust the claimed playerId for position-tracking once the
+        // matching token proves it — otherwise anyone could send a "sub" for
+        // someone else's id and poison their tracked position (see the
+        // ClientMessage.playerToken doc comment).
+        const verifiedPlayerId = social.verifyToken(msg.playerId ?? "", msg.playerToken)
+          ? msg.playerId
+          : undefined;
         hub.subscribe({
           id,
           lat: msg.lat,
           lon: msg.lon,
           viewRadiusKm: msg.viewRadiusKm,
+          playerId: verifiedPlayerId,
           send: (m) => {
             if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(m));
           },
@@ -149,3 +172,14 @@ app.register(async (instance) => {
 app.listen({ port: PORT, host: "0.0.0.0" }).then(() => {
   console.log(`[sky] aloft-sky listening on :${PORT}`);
 });
+
+// The file stores debounce their writes (see SocialStore/PushStore.persist);
+// without this, a mutation just before a deploy/restart could be lost.
+async function shutdown(signal: string): Promise<void> {
+  console.log(`[sky] ${signal} received, flushing stores before exit`);
+  await Promise.allSettled([social.flush(), pushStore.flush()]);
+  await app.close();
+  process.exit(0);
+}
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));

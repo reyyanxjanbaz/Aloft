@@ -61,20 +61,24 @@ export function startGeofence(provider: FlightProvider, store: PushStore): void 
           hex: best.hex,
         });
 
-        sub.lastPingAt = now;
-        sub.pingedHexes[best.hex] = now;
-        store.persist();
-
+        // Cooldown/dedupe are only spent once the push actually goes out —
+        // committing them beforehand meant a single transient send failure
+        // (a 429, a timeout) could silently cost the player their next
+        // eligible window for this subscriber and this aircraft, with the
+        // notification never having arrived.
         try {
           await webpush.sendNotification(sub.subscription, payload, { TTL: 300 });
           console.log(`[push] pinged ${sub.subscription.endpoint.slice(0, 40)}… about ${typeName(best.typeIcao)} (${rarity})`);
+          sub.lastPingAt = now;
+          sub.pingedHexes[best.hex] = now;
+          store.persist();
         } catch (err) {
           const status = (err as { statusCode?: number }).statusCode;
           if (status === 404 || status === 410) {
             store.remove(sub.subscription.endpoint);
             console.log("[push] removed dead subscription");
           } else {
-            console.warn("[push] send failed:", status ?? err);
+            console.warn("[push] send failed, will retry next tick:", status ?? err);
           }
         }
       } catch (err) {

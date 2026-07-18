@@ -17,11 +17,15 @@ export function useGeolocation(): { position: PlayerPosition | null; error: stri
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const lat = Number(params.get("lat"));
-    const lon = Number(params.get("lon"));
-    if (Number.isFinite(lat) && Number.isFinite(lon) && params.has("lat")) {
-      setPosition({ lat, lon, simulated: true });
-      return;
+    if (params.has("lat") && params.has("lon")) {
+      const lat = Number(params.get("lat"));
+      const lon = Number(params.get("lon"));
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        setPosition({ lat, lon, simulated: true });
+        return;
+      }
+      // Both present but not both valid numbers — fall through to real GPS
+      // rather than silently defaulting the missing/malformed one to 0.
     }
 
     if (!("geolocation" in navigator)) {

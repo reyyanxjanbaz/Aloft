@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { CAPTURE_RADIUS_KM } from "@aloft/shared";
 import { Shell } from "./components/Shell";
 import { HangarView } from "./features/hangar/HangarView";
@@ -10,26 +10,73 @@ import { SystemView } from "./features/system/SystemView";
 import { ensurePlayer } from "./lib/player";
 import { useGeolocation, type PlayerPosition } from "./lib/useGeolocation";
 import { isTab, useApp } from "./state/app";
-import { connectSky, disconnectSky } from "./state/planes";
+import { connectSky, disconnectSky, setSkyIdentity, updateView, usePlanes } from "./state/planes";
 import { IconWarning, IconWorld } from "./ui/icons";
+
+/** Jumps to the scope and opens a contact — from a notification tap. */
+function focusContact(hex: string): void {
+  usePlanes.getState().select(hex);
+  useApp.getState().go({ name: "radar" });
+}
 
 export function App() {
   const { position, error } = useGeolocation();
   const view = useApp((s) => s.view);
+  const connectedRef = useRef(false);
 
   useEffect(() => {
-    void ensurePlayer();
+    void ensurePlayer().then((p) => setSkyIdentity(p?.id, p?.token));
   }, []);
 
-  // Open the feed once a position is known; the map re-aims it as it moves.
+  // Open the feed once a position is first known, then re-aim the *same*
+  // socket as GPS refines — tearing the WebSocket down and rebuilding it on
+  // every position update (position changes on essentially every GPS tick)
+  // used to flash the aircraft list empty and re-handshake constantly.
   useEffect(() => {
     if (!position) return;
-    connectSky({ lat: position.lat, lon: position.lon, viewRadiusKm: CAPTURE_RADIUS_KM * 4 });
-    return () => disconnectSky();
+    if (!connectedRef.current) {
+      connectedRef.current = true;
+      connectSky({ lat: position.lat, lon: position.lon, viewRadiusKm: CAPTURE_RADIUS_KM * 4 });
+    } else {
+      updateView({ lat: position.lat, lon: position.lon, viewRadiusKm: CAPTURE_RADIUS_KM * 4 });
+    }
   }, [position?.lat, position?.lon]);
 
-  if (error) return <Boot error={error} />;
-  if (!position) return <Boot />;
+  useEffect(() => {
+    return () => {
+      connectedRef.current = false;
+      disconnectSky();
+    };
+  }, []);
+
+  // Tapping a sky-alert notification carries the aircraft it was about, so
+  // the player lands on that contact instead of wherever the app happened to
+  // be — via a fresh window's URL, or a postMessage to an already-open one.
+  useEffect(() => {
+    const hex = new URLSearchParams(window.location.search).get("focus");
+    if (hex) {
+      focusContact(hex);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("focus");
+      window.history.replaceState(null, "", url.pathname + url.search);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "focus-contact" && typeof event.data.hex === "string") {
+        focusContact(event.data.hex);
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMessage);
+  }, []);
+
+  // A transient GPS error (elevator, tunnel, a single watchPosition timeout)
+  // must not throw away an already-acquired, still-usable position — that
+  // used to unmount the in-progress Hunt capture screen out from under the
+  // player. Only show the error screen when we've never gotten a fix at all.
+  if (!position) return error ? <Boot error={error} /> : <Boot />;
 
   if (view.name === "hunt") return <HuntView hex={view.hex} position={position} />;
   if (view.name === "reveal") {

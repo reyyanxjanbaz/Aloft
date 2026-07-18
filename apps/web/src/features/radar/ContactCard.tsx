@@ -130,7 +130,11 @@ function ContactBody({
         <Readout label="Speed" value={Math.round(plane.gsKt).toString()} unit="kt" />
         <Readout label="Range" value={km.toFixed(1)} unit="km" />
         <Readout label="Bearing" value={`${Math.round(bearing).toString().padStart(3, "0")}°`} unit={compass(bearing)} />
-        <Readout label="Elevation" value={elev > 0 ? `${Math.round(elev)}°` : "—"} unit={elev > 0 ? "up" : "below"} />
+        <Readout
+          label="Elevation"
+          value={elev === 0 ? "Level" : `${Math.round(Math.abs(elev))}°`}
+          unit={elev === 0 ? "" : elev > 0 ? "up" : "below"}
+        />
         <Readout label="Tail" value={plane.reg ?? "—"} unit="" />
       </dl>
 

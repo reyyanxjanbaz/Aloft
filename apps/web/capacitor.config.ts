@@ -11,18 +11,18 @@ const config: CapacitorConfig = {
   appId: "com.aloft.game",
   appName: "Aloft",
   webDir: "dist",
-  backgroundColor: "#0b1020",
+  backgroundColor: "#040706",
   ios: {
     contentInset: "never",
-    backgroundColor: "#0b1020",
+    backgroundColor: "#040706",
   },
   android: {
-    backgroundColor: "#0b1020",
+    backgroundColor: "#040706",
   },
   plugins: {
     SplashScreen: {
       launchShowDuration: 1200,
-      backgroundColor: "#0b1020",
+      backgroundColor: "#040706",
       showSpinner: false,
     },
     PushNotifications: {

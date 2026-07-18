@@ -47,6 +47,16 @@ describe("elevationDeg", () => {
   it("below the horizon is negative", () => {
     expect(elevationDeg(10_000, 1_000, 0)).toBeLessThan(0);
   });
+
+  it("directly below at zero ground distance is -90, not +90", () => {
+    // Regression: a special-cased `groundDistanceM <= 0 -> return 90` used to
+    // report "straight up" for a target directly underneath the observer.
+    expect(elevationDeg(0, 100, 50)).toBeCloseTo(-90, 5);
+  });
+
+  it("same altitude at zero ground distance is level (0), not +90", () => {
+    expect(elevationDeg(0, 50, 50)).toBe(0);
+  });
 });
 
 describe("deadReckon", () => {
@@ -61,5 +71,10 @@ describe("deadReckon", () => {
 
   it("no movement when speed is zero", () => {
     expect(deadReckon(51.5, -0.12, 90, 0, 10)).toEqual([51.5, -0.12]);
+  });
+
+  it("no movement when speed is negative or NaN (corrupted reading)", () => {
+    expect(deadReckon(51.5, -0.12, 90, -50, 10)).toEqual([51.5, -0.12]);
+    expect(deadReckon(51.5, -0.12, 90, NaN, 10)).toEqual([51.5, -0.12]);
   });
 });

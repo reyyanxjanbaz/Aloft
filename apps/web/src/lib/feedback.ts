@@ -32,6 +32,11 @@ export function primeAudio(): void {
   master = ctx.createGain();
   master.gain.value = isMuted() ? 0 : 0.9;
   master.connect(ctx.destination);
+  // A brand-new context isn't guaranteed to start "running" on every engine
+  // even inside a user gesture — without this, every tone()/noiseBurst()
+  // call's `ctx.state !== "running"` guard could stay true for the entire
+  // session, silently dropping all sound and never surfacing an error.
+  void ctx.resume();
 }
 
 function tone(

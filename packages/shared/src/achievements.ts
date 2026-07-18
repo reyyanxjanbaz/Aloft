@@ -44,17 +44,26 @@ const isWide = (c: CatchLike) => {
 /**
  * Consecutive-day catch streak ending today or yesterday (local time),
  * so an unbroken streak survives until the end of the following day.
+ *
+ * Walks calendar days via `setDate`, not by subtracting a fixed 24h in
+ * milliseconds — a fixed-ms step skips or double-counts a day across a DST
+ * transition, since one local calendar day isn't always exactly 86,400,000ms.
+ *
+ * Note: this runs both server-side (Node, typically UTC) and client-side
+ * (the browser's local zone) against the same catch data, so the same
+ * player can see a slightly different streak from each — a known tradeoff
+ * of the pre-auth, no-timezone-negotiation MVP, not something this
+ * function can resolve on its own.
  */
 export function streakDays(catches: CatchLike[], now: number): number {
-  if (catches.length === 0) return 0;
+  if (catches.length === 0 || !Number.isFinite(now)) return 0;
   const days = new Set(catches.map((c) => new Date(c.caughtAt).toDateString()));
-  const DAY = 86_400_000;
-  let cursor = now;
-  if (!days.has(new Date(cursor).toDateString())) cursor -= DAY; // grace: yesterday may start it
+  const cursor = new Date(now);
+  if (!days.has(cursor.toDateString())) cursor.setDate(cursor.getDate() - 1); // grace: yesterday may start it
   let streak = 0;
-  while (days.has(new Date(cursor).toDateString())) {
+  while (days.has(cursor.toDateString())) {
     streak++;
-    cursor -= DAY;
+    cursor.setDate(cursor.getDate() - 1);
   }
   return streak;
 }

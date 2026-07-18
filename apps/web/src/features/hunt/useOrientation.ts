@@ -41,7 +41,11 @@ export function useOrientation() {
       }
       const pitch = e.beta !== null ? Math.max(-90, Math.min(90, e.beta - 90)) : null;
 
-      if (heading !== null) {
+      // Once the player has fallen back to (or chosen) drag mode, a
+      // late-arriving real sensor reading must not silently reclaim control —
+      // that used to yank the reticle out from under an active manual drag
+      // the instant the compass finally produced its first heading.
+      if (heading !== null && modeRef.current !== "drag") {
         gotSensorRef.current = true;
         if (modeRef.current !== "sensor") setModeBoth("sensor");
         aimRef.current.heading = heading;

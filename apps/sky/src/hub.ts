@@ -24,6 +24,8 @@ export interface Subscriber {
   lon: number;
   /** Viewport radius — how much sky this client is looking at. */
   viewRadiusKm: number;
+  /** Player identity, if known — enables the catch-location cross-check below. */
+  playerId?: string;
   send(msg: ServerMessage): void;
 }
 
@@ -56,10 +58,28 @@ const CATCH_TIME_SLACK_MS = 90_000;
  * rejecting anything absurd.
  */
 const CATCH_MAX_DISTANCE_KM = CAPTURE_RADIUS_KM * 6;
+/** How long a player's last-reported position stays usable for the cross-check below. */
+const PLAYER_POSITION_MAX_AGE_MS = 5 * 60_000;
+/**
+ * How far a claimed catch location may drift from the player's last-known
+ * subscribed position. Generous relative to CAPTURE_RADIUS_KM so ordinary GPS
+ * drift and the gap between "last WS position update" and "catch submitted"
+ * never reject a real capture, while still requiring the player to have
+ * actually been in the neighbourhood — not simply copying the aircraft's own
+ * broadcast position, which validateCatch alone can't distinguish from a real
+ * capture.
+ */
+const PLAYER_POSITION_TOLERANCE_KM = CAPTURE_RADIUS_KM * 2;
 
 interface AirframeHistory {
   latest: AircraftState;
   fixes: { lat: number; lon: number; track: number; gsKt: number; ts: number }[];
+}
+
+interface PlayerPosition {
+  lat: number;
+  lon: number;
+  ts: number;
 }
 
 export class SkyHub {
@@ -68,6 +88,8 @@ export class SkyHub {
   private subscriberCells = new Map<number, string>();
   /** hex → recent position history, the source of truth for catch validation. */
   private history = new Map<string, AirframeHistory>();
+  /** playerId → last position we saw them subscribe from. */
+  private playerPositions = new Map<string, PlayerPosition>();
 
   constructor(private provider: FlightProvider) {
     setInterval(() => this.pruneHistory(), 60_000).unref?.();
@@ -75,9 +97,20 @@ export class SkyHub {
 
   /**
    * Validates that `hex` really was near (lat, lon) at time `ts`, using only
-   * positions this server saw itself. The client is never trusted.
+   * positions this server saw itself, AND — when `claimingPlayerId` has a
+   * recent tracked position — that (lat, lon) is somewhere near where that
+   * player's own device was actually reporting itself. Without the second
+   * check, a client could pass validation by simply echoing back the plane's
+   * own broadcast position (which it already receives over the live feed)
+   * without the player needing to be anywhere near it.
    */
-  validateCatch(hex: string, lat: number, lon: number, ts: number): CatchResponse {
+  validateCatch(
+    hex: string,
+    lat: number,
+    lon: number,
+    ts: number,
+    claimingPlayerId?: string
+  ): CatchResponse {
     const entry = this.history.get(hex.toLowerCase());
     if (!entry) return { ok: false, reason: "unknown aircraft — not seen on this radar" };
 
@@ -96,6 +129,16 @@ export class SkyHub {
     if (bestKm === Infinity) return { ok: false, reason: "no recent position fix for that aircraft" };
     if (bestKm > CATCH_MAX_DISTANCE_KM) {
       return { ok: false, reason: `aircraft was ${bestKm.toFixed(0)} km away — out of range` };
+    }
+
+    if (claimingPlayerId) {
+      const known = this.playerPositions.get(claimingPlayerId);
+      if (known && now - known.ts < PLAYER_POSITION_MAX_AGE_MS) {
+        const driftKm = distanceM(known.lat, known.lon, lat, lon) / 1000;
+        if (driftKm > PLAYER_POSITION_TOLERANCE_KM) {
+          return { ok: false, reason: "claimed location doesn't match your reported position" };
+        }
+      }
     }
 
     return {
@@ -121,9 +164,14 @@ export class SkyHub {
   }
 
   private pruneHistory(): void {
-    const cutoff = Date.now() - HISTORY_TTL_MS;
+    const now = Date.now();
+    const cutoff = now - HISTORY_TTL_MS;
     for (const [key, entry] of this.history) {
       if (entry.latest.ts < cutoff) this.history.delete(key);
+    }
+    const posCutoff = now - PLAYER_POSITION_MAX_AGE_MS;
+    for (const [playerId, pos] of this.playerPositions) {
+      if (pos.ts < posCutoff) this.playerPositions.delete(playerId);
     }
   }
 
@@ -136,9 +184,31 @@ export class SkyHub {
       Math.max(sub.viewRadiusKm, MIN_VIEW_RADIUS_KM),
       MAX_VIEW_RADIUS_KM
     );
-    this.unsubscribe(sub.id);
+
+    if (sub.playerId) {
+      this.playerPositions.set(sub.playerId, { lat: sub.lat, lon: sub.lon, ts: Date.now() });
+    }
 
     const key = cellKey(sub.lat, sub.lon);
+
+    // Re-subscribing to the same cell (a GPS refresh, or a map pan that
+    // didn't cross a cell boundary) just updates this subscriber's record in
+    // place. Tearing the cell down and recreating it — the previous
+    // behaviour, via an unconditional unsubscribe+recreate below — meant a
+    // client that re-subscribes often (every GPS tick is a realistic
+    // pattern) forced a fresh, unthrottled upstream poll on every message
+    // instead of respecting POLL_MS.
+    if (this.subscriberCells.get(sub.id) === key) {
+      const existingCell = this.cells.get(key);
+      if (existingCell) {
+        existingCell.subscribers.set(sub.id, sub);
+        if (existingCell.lastAircraft.length > 0) this.deliver(existingCell, sub);
+        return;
+      }
+    }
+
+    this.unsubscribe(sub.id);
+
     let cell = this.cells.get(key);
     if (!cell) {
       cell = {

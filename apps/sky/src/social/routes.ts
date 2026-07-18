@@ -10,12 +10,43 @@ function playerId(headers: Record<string, unknown>): string | null {
   return typeof id === "string" && id.length > 0 ? id : null;
 }
 
+function playerToken(headers: Record<string, unknown>): string | undefined {
+  const token = headers["x-player-token"];
+  return typeof token === "string" && token.length > 0 ? token : undefined;
+}
+
+/**
+ * For routes that mutate a player's own data. Requires both an id and its
+ * matching bearer token — closes the gap where knowing someone's id (visible
+ * to friends via /friends, /activity) was previously enough to act as them.
+ */
+function requireAuth(
+  req: { headers: Record<string, unknown> },
+  reply: { code(n: number): { send(body: unknown): unknown } },
+  social: SocialStore
+): string | null {
+  const id = playerId(req.headers);
+  if (!id) {
+    reply.code(401).send({ ok: false, reason: "missing x-player-id" });
+    return null;
+  }
+  if (!social.verifyToken(id, playerToken(req.headers))) {
+    reply.code(401).send({ ok: false, reason: "invalid or missing player token" });
+    return null;
+  }
+  return id;
+}
+
 export function registerSocialRoutes(app: FastifyInstance, social: SocialStore): void {
-  app.post<{ Body: { name?: string; id?: string } }>("/player/register", async (req, reply) => {
-    const { name, id } = req.body ?? {};
-    if (typeof name !== "string") return reply.code(400).send({ ok: false, reason: "expected {name}" });
-    return { ok: true, player: social.register(name, id) };
-  });
+  app.post<{ Body: { name?: string; id?: string; token?: string } }>(
+    "/player/register",
+    async (req, reply) => {
+      const { name, id, token } = req.body ?? {};
+      if (typeof name !== "string") return reply.code(400).send({ ok: false, reason: "expected {name}" });
+      const result = social.register(name, id, token);
+      return reply.code(result.ok ? 200 : 401).send(result);
+    }
+  );
 
   app.get("/player/me", async (req, reply) => {
     const id = playerId(req.headers as never);
@@ -25,8 +56,8 @@ export function registerSocialRoutes(app: FastifyInstance, social: SocialStore):
   });
 
   app.post<{ Body: { code?: string } }>("/friends/add", async (req, reply) => {
-    const id = playerId(req.headers as never);
-    if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
+    const id = requireAuth(req, reply, social);
+    if (!id) return;
     const code = req.body?.code;
     if (typeof code !== "string") return reply.code(400).send({ ok: false, reason: "expected {code}" });
     const result = social.addFriendByCode(id, code);
@@ -34,8 +65,8 @@ export function registerSocialRoutes(app: FastifyInstance, social: SocialStore):
   });
 
   app.post<{ Body: { friendId?: string } }>("/friends/remove", async (req, reply) => {
-    const id = playerId(req.headers as never);
-    if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
+    const id = requireAuth(req, reply, social);
+    if (!id) return;
     if (req.body?.friendId) social.removeFriend(id, req.body.friendId);
     return { ok: true };
   });

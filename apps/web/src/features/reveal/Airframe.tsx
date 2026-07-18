@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { accentColor } from "./liveries";
@@ -109,8 +109,13 @@ export function Airframe({
     };
   }, [spec]);
 
-  useMemo(() => {
-    // Dispose the previous generation's buffers when the spec changes.
+  // `useMemo`'s return value is memoized *data* — returning a cleanup
+  // function from it does nothing; only `useEffect` treats a returned
+  // function as cleanup to invoke. The previous version silently never
+  // disposed a single geometry, leaking GPU buffers every time `geo`
+  // recomputes (spin through several hangar entries without the Stage
+  // unmounting in between and the leak compounds indefinitely).
+  useEffect(() => {
     return () => Object.values(geo).forEach((g) => g.dispose());
   }, [geo]);
 

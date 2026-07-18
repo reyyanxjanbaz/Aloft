@@ -42,18 +42,29 @@ export async function fetchFriendHangar(
 }
 
 export async function addFriend(code: string): Promise<{ ok: boolean; reason?: string; friend?: FriendSummary }> {
-  const res = await fetch(`${SKY_URL}/friends/add`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...playerHeaders() },
-    body: JSON.stringify({ code }),
-  });
-  return (await res.json()) as { ok: boolean; reason?: string; friend?: FriendSummary };
+  try {
+    const res = await fetch(`${SKY_URL}/friends/add`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...playerHeaders() },
+      body: JSON.stringify({ code }),
+    });
+    return (await res.json()) as { ok: boolean; reason?: string; friend?: FriendSummary };
+  } catch {
+    // Network failure, not a server-side "no" — the caller's existing
+    // ok/reason handling already surfaces this without special-casing.
+    return { ok: false, reason: "No link to the tower — try again" };
+  }
 }
 
-export async function removeFriend(friendId: string): Promise<void> {
-  await fetch(`${SKY_URL}/friends/remove`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...playerHeaders() },
-    body: JSON.stringify({ friendId }),
-  });
+export async function removeFriend(friendId: string): Promise<{ ok: boolean }> {
+  try {
+    const res = await fetch(`${SKY_URL}/friends/remove`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...playerHeaders() },
+      body: JSON.stringify({ friendId }),
+    });
+    return { ok: res.ok };
+  } catch {
+    return { ok: false };
+  }
 }

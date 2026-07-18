@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { ActivityItem, FriendSummary, LeaderboardRow, PlayerProfile, SharedCatch } from "@aloft/shared";
 import { share } from "../../lib/platform";
@@ -43,6 +43,20 @@ export function SocialView() {
   const [message, setMessage] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
   const [visiting, setVisiting] = useState<{ player: PlayerProfile; catches: SharedCatch[] } | null>(null);
+  // Tracks which friend's hangar was most recently requested, so a slower
+  // response for an earlier tap can't overwrite a faster one for a later tap.
+  const visitingRequestRef = useRef<string | null>(null);
+
+  const visitFriend = useCallback((friendId: string) => {
+    visitingRequestRef.current = friendId;
+    void fetchFriendHangar(friendId)
+      .then((result) => {
+        if (visitingRequestRef.current === friendId) setVisiting(result);
+      })
+      .catch(() => {
+        if (visitingRequestRef.current === friendId) setMessage("Could not open that hangar");
+      });
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -61,13 +75,22 @@ export function SocialView() {
   }, [refresh]);
 
   useEffect(() => {
-    const invite = new URLSearchParams(window.location.search).get("invite");
+    const params = new URLSearchParams(window.location.search);
+    const invite = params.get("invite");
     if (!invite || !player) return;
     void addFriend(invite).then((r) => {
       setMessage(r.ok ? `${r.friend?.name ?? "Spotter"} added` : (r.reason ?? "Could not add that code"));
       if (r.ok) void refresh();
     });
-  }, [player, refresh]);
+    // Consume the invite from the URL so it can't be resubmitted — this
+    // effect previously depended on the whole `player` object, so every
+    // successful rename (which replaces that object) re-fired it and
+    // silently re-sent the same accept-invite request.
+    params.delete("invite");
+    const rest = params.toString();
+    window.history.replaceState(null, "", rest ? `?${rest}` : window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player?.id, refresh]);
 
   const submit = async () => {
     if (!code.trim()) return;
@@ -83,7 +106,15 @@ export function SocialView() {
     return (
       <div className="screen">
         <header className="screen__head">
-          <button className="btn btn--quiet" onClick={() => setVisiting(null)}>
+          <button
+            className="btn btn--quiet"
+            onClick={() => {
+              // Also clears the in-flight-request marker, so a slow response
+              // that arrives after backing out can't silently reopen this view.
+              visitingRequestRef.current = null;
+              setVisiting(null);
+            }}
+          >
             <IconBack size={16} weight="bold" />
             Back
           </button>
@@ -204,14 +235,7 @@ export function SocialView() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04, duration: 0.28 }}
             >
-              <button
-                className="row__main"
-                onClick={() =>
-                  void fetchFriendHangar(f.id)
-                    .then(setVisiting)
-                    .catch(() => setMessage("Could not open that hangar"))
-                }
-              >
+              <button className="row__main" onClick={() => visitFriend(f.id)}>
                 <strong>{f.name}</strong>
                 <span className="row__meta mono">
                   {f.stats.catches} caught · {f.stats.rarityScore} pts
@@ -227,7 +251,12 @@ export function SocialView() {
               <button
                 className="icon-btn"
                 aria-label={`Remove ${f.name}`}
-                onClick={() => void removeFriend(f.id).then(refresh)}
+                onClick={() =>
+                  void removeFriend(f.id).then((r) => {
+                    if (r.ok) void refresh();
+                    else setMessage("Could not remove — try again");
+                  })
+                }
               >
                 <IconRemove size={16} />
               </button>

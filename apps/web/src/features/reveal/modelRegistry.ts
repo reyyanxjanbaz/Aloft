@@ -23,9 +23,18 @@ interface Manifest {
 let manifestPromise: Promise<Manifest | null> | null = null;
 
 function loadManifest(): Promise<Manifest | null> {
-  manifestPromise ??= fetch("/models/manifest.json")
-    .then((res) => (res.ok ? (res.json() as Promise<Manifest>) : null))
-    .catch(() => null);
+  if (!manifestPromise) {
+    manifestPromise = fetch("/models/manifest.json")
+      .then((res) => (res.ok ? (res.json() as Promise<Manifest>) : null))
+      .catch(() => null)
+      .then((result) => {
+        // A failed fetch isn't a permanent fact ("no manifest exists") — clear
+        // the cache on failure so the next resolveModel()/listAttributions()
+        // call retries instead of using the procedural fallback all session.
+        if (result === null) manifestPromise = null;
+        return result;
+      });
+  }
   return manifestPromise;
 }
 

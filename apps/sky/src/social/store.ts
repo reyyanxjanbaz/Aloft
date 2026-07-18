@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -21,6 +22,14 @@ const FILE = join(DATA_DIR, "social.json");
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 interface PlayerRecord extends PlayerProfile {
+  /**
+   * Bearer secret proving control of this identity, issued once at creation
+   * and required (via `x-player-token`) for every mutating request. Never
+   * included in any response except the owner's own successful
+   * registration/rename — `PlayerProfile` (what friends/leaderboards see)
+   * has no token field at all.
+   */
+  token: string;
   createdAt: number;
   catches: SharedCatch[];
   friendIds: string[];
@@ -32,8 +41,18 @@ interface Snapshot {
   firstSpots: Record<string, string>;
 }
 
+/**
+ * Safe index into RARITY_ORDER for a string that *should* be a Rarity but
+ * may not be (persisted data, a future tier renamed/removed). -1 for unknown
+ * values rather than an `as never` cast that silently mis-scores garbage.
+ */
+function rarityIndex(rarity: string): number {
+  return (RARITY_ORDER as readonly string[]).indexOf(rarity);
+}
+
 export function rarityPoints(rarity: string): number {
-  return (RARITY_ORDER.indexOf(rarity as never) + 1) ** 2;
+  const idx = rarityIndex(rarity);
+  return idx >= 0 ? (idx + 1) ** 2 : 0;
 }
 
 /**
@@ -60,43 +79,110 @@ export class SocialStore {
     }
   }
 
+  private persistTimer: NodeJS.Timeout | null = null;
+
+  /**
+   * Debounced, async, whole-file rewrite. A burst of mutations (several
+   * catches, a friend add) collapses into one write instead of one
+   * synchronous `writeFileSync` per call — the previous version blocked
+   * Node's single event loop, which is also running every cell's poll timer
+   * and WS fan-out, on every single mutation.
+   */
   private persist(): void {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      void this.writeNow();
+    }, 250);
+    this.persistTimer.unref?.();
+  }
+
+  private async writeNow(): Promise<void> {
     mkdirSync(DATA_DIR, { recursive: true });
     const snap: Snapshot = {
       players: [...this.players.values()],
       firstSpots: Object.fromEntries(this.firstSpots),
     };
-    writeFileSync(FILE, JSON.stringify(snap, null, 2));
+    try {
+      await writeFile(FILE, JSON.stringify(snap, null, 2));
+    } catch (err) {
+      // In-memory state is now ahead of disk. Retry on the next mutation
+      // (persist() will be called again) rather than losing the write
+      // silently; log loudly since this is the only signal an operator gets.
+      console.error("[social] failed to persist store — will retry on next change:", err);
+    }
+  }
+
+  /** Bypasses the debounce and writes immediately — call before process exit. */
+  async flush(): Promise<void> {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    await this.writeNow();
   }
 
   private newCode(): string {
-    for (let attempt = 0; attempt < 50; attempt++) {
-      let code = "";
-      for (let i = 0; i < 6; i++) {
-        code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
-      }
+    // Even the UUID-derived fallback is checked for uniqueness — a raw
+    // collision would silently steal an existing player's code out from
+    // under them (byCode.set would overwrite the old mapping).
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const code =
+        attempt < 50
+          ? Array.from(
+              { length: 6 },
+              () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+            ).join("")
+          : randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
       if (!this.byCode.has(code)) return code;
     }
-    return randomUUID().slice(0, 6).toUpperCase();
+    throw new Error("[social] could not allocate a unique spotter code");
   }
 
-  /** Creates a player, or renames/returns the existing one when `id` is known. */
-  register(name: string, id?: string): PlayerProfile {
+  /**
+   * Creates a player, or renames/returns the existing one when `id` is known.
+   * Returning the bearer `token` requires proving ownership: omit `id`
+   * entirely (fresh device — always creates, token returned once) or supply
+   * both `id` and the matching `token` (rename / refresh — token echoed
+   * back). An `id` with a wrong or missing token gets back the public
+   * profile only, with no token and no rename applied — this is the gate
+   * that stops anyone who merely knows your id (e.g. a friend, since ids
+   * are visible in /friends and /activity) from acting as you.
+   */
+  register(
+    name: string,
+    id?: string,
+    token?: string
+  ): { ok: true; player: PlayerProfile; token?: string } | { ok: false; reason: string } {
     const clean = name.trim().slice(0, 24) || "Anonymous Spotter";
+
     if (id) {
       const existing = this.players.get(id);
       if (existing) {
+        if (!token) {
+          // No proof of ownership offered — hand back the public profile
+          // only. Lets a stale/no-token client still see who it is without
+          // being able to mutate anything or learn the secret token.
+          return { ok: true, player: this.profile(existing) };
+        }
+        if (token !== existing.token) {
+          return { ok: false, reason: "invalid token" };
+        }
         if (existing.name !== clean) {
           existing.name = clean;
           this.persist();
         }
-        return { id: existing.id, name: existing.name, code: existing.code };
+        return { ok: true, player: this.profile(existing), token: existing.token };
       }
+      // id given but unknown (e.g. server data was reset): create fresh
+      // under that id and issue a new token, same as first-run.
     }
+
     const record: PlayerRecord = {
       id: id ?? randomUUID(),
       name: clean,
       code: this.newCode(),
+      token: randomUUID(),
       createdAt: Date.now(),
       catches: [],
       friendIds: [],
@@ -104,7 +190,14 @@ export class SocialStore {
     this.players.set(record.id, record);
     this.byCode.set(record.code, record.id);
     this.persist();
-    return { id: record.id, name: record.name, code: record.code };
+    return { ok: true, player: this.profile(record), token: record.token };
+  }
+
+  /** True when `token` is the bearer secret for `playerId`. */
+  verifyToken(playerId: string, token: string | undefined): boolean {
+    if (!token) return false;
+    const player = this.players.get(playerId);
+    return player !== undefined && player.token === token;
   }
 
   get(id: string): PlayerRecord | undefined {
@@ -145,7 +238,7 @@ export class SocialStore {
   stats(player: PlayerRecord): PlayerStats {
     const catches = player.catches;
     const best = catches.reduce<string | null>(
-      (acc, c) => (acc === null || RARITY_ORDER.indexOf(c.rarity) > RARITY_ORDER.indexOf(acc as never) ? c.rarity : acc),
+      (acc, c) => (acc === null || rarityIndex(c.rarity) > rarityIndex(acc) ? c.rarity : acc),
       null
     );
     return {

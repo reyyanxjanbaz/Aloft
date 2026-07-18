@@ -37,10 +37,26 @@ interface View {
 let socket: WebSocket | null = null;
 let retryMs = 1000;
 let view: View | null = null;
+let skyPlayerId: string | undefined;
+let skyPlayerToken: string | undefined;
+
+/**
+ * Attaches this device's player identity to the live feed, so the server can
+ * track a verified last-known position for the anti-cheat catch check. Call
+ * once the player is known (after `ensurePlayer()` resolves); safe to call
+ * again if the identity changes.
+ */
+export function setSkyIdentity(playerId: string | undefined, playerToken: string | undefined): void {
+  skyPlayerId = playerId;
+  skyPlayerToken = playerToken;
+  sendSub();
+}
 
 function sendSub(): void {
   if (socket?.readyState === WebSocket.OPEN && view) {
-    socket.send(JSON.stringify({ type: "sub", ...view }));
+    socket.send(
+      JSON.stringify({ type: "sub", ...view, playerId: skyPlayerId, playerToken: skyPlayerToken })
+    );
   }
 }
 
@@ -93,7 +109,13 @@ function open(): void {
   };
 
   ws.onmessage = (ev) => {
-    const msg = JSON.parse(ev.data) as ServerMessage;
+    if (socket !== ws) return; // a frame from a socket we've since superseded
+    let msg: ServerMessage;
+    try {
+      msg = JSON.parse(ev.data);
+    } catch {
+      return; // one malformed frame shouldn't take down the feed
+    }
     if (msg.type === "planes") {
       const planes = new Map<string, AircraftState>();
       for (const ac of msg.aircraft) planes.set(ac.hex, ac);
@@ -101,7 +123,10 @@ function open(): void {
     }
   };
 
-  ws.onerror = () => usePlanes.setState({ link: "offline" });
+  ws.onerror = () => {
+    if (socket !== ws) return; // superseded by a newer socket
+    usePlanes.setState({ link: "offline" });
+  };
 
   ws.onclose = () => {
     if (socket !== ws) return; // superseded by a newer socket
