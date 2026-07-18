@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
-import { DEFAULT_RADIUS_KM, typeName, type CatchRequest, type ClientMessage } from "@aloft/shared";
+import { CAPTURE_RADIUS_KM, typeName, type CatchRequest, type ClientMessage } from "@aloft/shared";
 import { SkyHub } from "./hub";
 import { AdsbLolProvider } from "./providers/adsbLol";
 import { AirplanesLiveProvider } from "./providers/airplanesLive";
@@ -51,7 +51,7 @@ app.post<{ Body: SubscribeBody }>("/push/subscribe", async (req, reply) => {
     subscription: subscription as never,
     lat: lat!,
     lon: lon!,
-    radiusKm: Math.min(Math.max(radiusKm ?? DEFAULT_RADIUS_KM, 1), 100),
+    radiusKm: Math.min(Math.max(radiusKm ?? CAPTURE_RADIUS_KM, 1), 100),
   });
   return { ok: true };
 });
@@ -67,7 +67,7 @@ app.get<{ Querystring: { lat?: string; lon?: string; radiusKm?: string } }>(
   async (req, reply) => {
     const lat = Number(req.query.lat);
     const lon = Number(req.query.lon);
-    const radiusKm = Number(req.query.radiusKm ?? DEFAULT_RADIUS_KM);
+    const radiusKm = Number(req.query.radiusKm ?? CAPTURE_RADIUS_KM);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       return reply.code(400).send({ error: "lat and lon are required numbers" });
     }
@@ -123,19 +123,21 @@ app.register(async (instance) => {
         msg.type === "sub" &&
         Number.isFinite(msg.lat) &&
         Number.isFinite(msg.lon) &&
-        Number.isFinite(msg.radiusKm)
+        Number.isFinite(msg.viewRadiusKm)
       ) {
         hub.subscribe({
           id,
           lat: msg.lat,
           lon: msg.lon,
-          radiusKm: msg.radiusKm,
+          viewRadiusKm: msg.viewRadiusKm,
           send: (m) => {
             if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(m));
           },
         });
       } else {
-        socket.send(JSON.stringify({ type: "error", message: "expected {type:'sub',lat,lon,radiusKm}" }));
+        socket.send(
+          JSON.stringify({ type: "error", message: "expected {type:'sub',lat,lon,viewRadiusKm}" })
+        );
       }
     });
 

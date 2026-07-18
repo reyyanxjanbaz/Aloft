@@ -21,10 +21,27 @@ export interface ReadsbAircraft {
   seen_pos?: number;
 }
 
+/**
+ * Airborne test. ADS-B feeds carry a lot of surface clutter — pushback tugs,
+ * fire trucks, ground stations like "TWR" — and none of it can be spotted in
+ * the sky, so it has no business on the scope.
+ */
+const AIRBORNE_MIN_ALT_FT = 300;
+const AIRBORNE_MIN_SPEED_KT = 60;
+
 export function normalizeReadsb(ac: ReadsbAircraft, now: number): AircraftState | null {
   if (typeof ac.lat !== "number" || typeof ac.lon !== "number") return null;
+  if (ac.alt_baro === "ground") return null;
+
   const geom = typeof ac.alt_geom === "number" ? ac.alt_geom : undefined;
-  const baro = typeof ac.alt_baro === "number" ? ac.alt_baro : ac.alt_baro === "ground" ? 0 : undefined;
+  const baro = typeof ac.alt_baro === "number" ? ac.alt_baro : undefined;
+  const altFt = geom ?? baro;
+  const gsKt = ac.gs ?? 0;
+
+  // No altitude at all, or crawling along near the ground: treat as surface.
+  if (altFt === undefined) return null;
+  if (altFt < AIRBORNE_MIN_ALT_FT && gsKt < AIRBORNE_MIN_SPEED_KT) return null;
+
   return {
     hex: ac.hex,
     callsign: (ac.flight ?? "").trim(),
@@ -32,8 +49,8 @@ export function normalizeReadsb(ac: ReadsbAircraft, now: number): AircraftState 
     typeIcao: ac.t,
     lat: ac.lat,
     lon: ac.lon,
-    altFt: geom ?? baro ?? 0,
-    gsKt: ac.gs ?? 0,
+    altFt,
+    gsKt,
     track: ac.track ?? 0,
     seenPosSec: ac.seen_pos ?? 0,
     ts: now,

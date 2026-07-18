@@ -1,0 +1,87 @@
+/*
+ * Aloft — "Flight Deck" design tokens.
+ *
+ * The interface is modelled on a cockpit multi-function display: phosphor
+ * green on near-black, hairline rules, tabular readouts, no gradients, no
+ * decorative fills. Status colour follows real avionics convention —
+ * green normal, cyan information, magenta active, amber caution — which is
+ * also how aircraft rarity is encoded.
+ */
+
+:root {
+  /* Surfaces — near-black with a faint green cast, like a lit instrument. */
+  --void: #040706;
+  --deck: #080d0b;
+  --deck-2: #0d1512;
+  --deck-3: #131d19;
+
+  /* Hairlines. Every division in the UI is one of these two. */
+  --rule: #1a2723;
+  --rule-hot: #2b433a;
+
+  /* Phosphor green — the signal colour. */
+  --phos: #00e08a;
+  --phos-dim: #0c8c59;
+  --phos-deep: #053323;
+
+  /* Type. */
+  --ink: #dcede6;
+  --ink-2: #7e958c;
+  --ink-3: #4a5c55;
+
+  /* Avionics status language, reused for rarity. */
+  --cyan: #35d6ff;
+  --magenta: #ff5ce1;
+  --amber: #ffb627;
+  --crimson: #ff4b4b;
+
+  --rarity-common: var(--ink-2);
+  --rarity-uncommon: var(--phos);
+  --rarity-rare: var(--cyan);
+  --rarity-epic: var(--magenta);
+  --rarity-legendary: var(--amber);
+
+  /* Type families. */
+  --font-display: "Chakra Petch", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type scale. */
+  --t-display: 1.75rem;
+  --t-h1: 1.25rem;
+  --t-h2: 0.9375rem;
+  --t-body: 0.875rem;
+  --t-small: 0.8125rem;
+  --t-label: 0.625rem;
+  --t-data-xl: 1.875rem;
+  --t-data: 0.9375rem;
+  --t-data-sm: 0.75rem;
+
+  /* Spacing scale — only these values are used. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-14: 56px;
+
+  /* Radii stay tight: this is equipment, not a card game. */
+  --r-sm: 2px;
+  --r: 3px;
+  --r-lg: 4px;
+
+  /* Motion — mechanical, decisive, never bouncy. */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 140ms;
+  --dur: 220ms;
+  --dur-slow: 420ms;
+
+  /* Chrome heights, shared by the shell and every screen that insets under it. */
+  --strip-h: 44px;
+  --nav-h: 56px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}

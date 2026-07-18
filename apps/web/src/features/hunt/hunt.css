@@ -1,0 +1,299 @@
+.hunt {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--void);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.hunt__camera,
+.hunt__nocamera {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Solid fallback when no camera is available — flat, never a gradient. */
+.hunt__nocamera {
+  background: var(--deck);
+}
+
+/* ── Briefing ─────────────────────────────────────────── */
+
+.hunt--brief {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-6);
+}
+
+.hunt__brief-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  width: 100%;
+  max-width: 380px;
+}
+
+.hunt__brief-title {
+  font-size: var(--t-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.hunt__brief-copy {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.6;
+}
+
+.hunt__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  list-style: none;
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.hunt__steps li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+
+.hunt__steps .label {
+  color: var(--phos-dim);
+}
+
+/* ── Heading tape ─────────────────────────────────────── */
+
+.tape {
+  position: absolute;
+  top: calc(var(--safe-t) + var(--s-3));
+  left: 0;
+  right: 0;
+  height: 34px;
+  overflow: hidden;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  background: rgba(4, 7, 6, 0.55);
+}
+
+.tape__scale {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  will-change: transform;
+}
+
+.tape__tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 7px;
+  background: var(--ink-3);
+}
+
+.tape__tick--major {
+  height: 12px;
+  background: var(--phos-dim);
+}
+
+.tape__label {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+
+/* The index is the aircraft's own nose — fixed, the scale moves under it. */
+.tape__index {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  margin-left: -1px;
+  background: var(--phos);
+}
+
+/* ── Reticle ──────────────────────────────────────────── */
+
+.hunt__target {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(58vw, 230px);
+  height: min(58vw, 230px);
+  transform: translate3d(-50%, -50%, 0);
+  will-change: transform;
+  pointer-events: none;
+}
+
+.reticle {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.reticle__track {
+  fill: none;
+  stroke: rgba(220, 237, 230, 0.18);
+  stroke-width: 2;
+}
+
+.reticle__progress {
+  fill: none;
+  stroke: var(--phos);
+  stroke-width: 3;
+  stroke-linecap: butt;
+  will-change: stroke-dashoffset;
+}
+
+.reticle__brackets path,
+.reticle__pip path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.reticle__brackets {
+  transition: transform var(--dur) var(--ease-out);
+  transform-origin: 70px 70px;
+}
+
+.reticle__brackets--locked {
+  transform: scale(0.86);
+}
+
+.hunt--locked .reticle__brackets path,
+.hunt--locked .reticle__pip path {
+  stroke: var(--phos);
+}
+
+.hunt--searching .reticle__brackets path,
+.hunt--searching .reticle__pip path {
+  stroke: rgba(220, 237, 230, 0.5);
+}
+
+/* ── Guide arrow ──────────────────────────────────────── */
+
+.hunt__arrow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: var(--phos);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+  pointer-events: none;
+}
+
+/* ── Chrome ───────────────────────────────────────────── */
+
+.hunt__exit {
+  position: absolute;
+  top: calc(var(--safe-t) + var(--s-6) + 26px);
+  right: var(--s-3);
+  background: rgba(4, 7, 6, 0.7);
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+.hunt__status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--safe-b) + 96px);
+  text-align: center;
+  pointer-events: none;
+}
+
+.hunt__status-text {
+  display: inline-block;
+  padding: var(--s-1) var(--s-3);
+  background: rgba(4, 7, 6, 0.7);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.hunt--locked .hunt__status-text {
+  color: var(--phos);
+  border-color: var(--phos-dim);
+}
+
+.hunt__readouts {
+  position: absolute;
+  left: var(--s-3);
+  right: var(--s-3);
+  bottom: calc(var(--safe-b) + var(--s-3));
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-2);
+  padding: var(--s-3);
+  background: rgba(4, 7, 6, 0.78);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  pointer-events: none;
+}
+
+.hunt__readouts .readout {
+  align-items: center;
+  text-align: center;
+}
+
+.hunt__note,
+.hunt__failure {
+  position: absolute;
+  left: var(--s-4);
+  right: var(--s-4);
+  bottom: calc(var(--safe-b) + 130px);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--t-data-sm);
+  letter-spacing: 0.06em;
+}
+
+.hunt__note {
+  color: var(--amber);
+}
+
+.hunt__failure {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  color: var(--crimson);
+}
+
+.hunt__lost {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-4);
+  padding: var(--s-6);
+  background: rgba(4, 7, 6, 0.86);
+  text-align: center;
+  color: var(--ink-2);
+}

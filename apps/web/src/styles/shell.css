@@ -1,0 +1,140 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--void);
+}
+
+/* ── Status strip ─────────────────────────────────────── */
+
+.strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  height: calc(var(--strip-h) + var(--safe-t));
+  padding: var(--safe-t) var(--s-4) 0;
+  background: var(--void);
+  border-bottom: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.strip__mark {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-h2);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* Power LED — the only always-on colour in the chrome. */
+.strip__led {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--phos);
+  transition: background var(--dur) var(--ease);
+}
+
+.strip__led--connecting {
+  background: var(--amber);
+  animation: led-blink 1s steps(2, end) infinite;
+}
+
+.strip__led--offline {
+  background: var(--crimson);
+}
+
+@keyframes led-blink {
+  50% { opacity: 0.25; }
+}
+
+.strip__status {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.strip__link--live { color: var(--phos); }
+.strip__link--connecting { color: var(--amber); }
+.strip__link--offline { color: var(--crimson); }
+
+.strip__sep {
+  width: 1px;
+  height: 10px;
+  background: var(--rule-hot);
+}
+
+.strip__count {
+  color: var(--ink-2);
+}
+
+/* ── Body ─────────────────────────────────────────────── */
+
+.shell__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.shell__view {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── Destination row ──────────────────────────────────── */
+
+.nav {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  height: calc(var(--nav-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: var(--void);
+  border-top: 1px solid var(--rule);
+  flex-shrink: 0;
+}
+
+.nav__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--ink-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.nav__item:hover {
+  color: var(--ink-2);
+}
+
+.nav__item--on {
+  color: var(--phos);
+}
+
+.nav__label {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Active destination is marked by a hairline bar, like a selected MFD page. */
+.nav__marker {
+  position: absolute;
+  top: -1px;
+  left: 22%;
+  right: 22%;
+  height: 2px;
+  background: var(--phos);
+}

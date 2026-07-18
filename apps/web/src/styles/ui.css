@@ -1,0 +1,216 @@
+/* Shared primitives. Every screen composes these — nothing is restyled locally. */
+
+/* ── Panel: the base instrument surface ──────────────── */
+
+.panel {
+  background: var(--deck);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+}
+
+.panel--raised {
+  background: var(--deck-2);
+}
+
+/* ── Rules ────────────────────────────────────────────── */
+
+.rule {
+  height: 1px;
+  background: var(--rule);
+  border: 0;
+}
+
+/* ── Buttons ──────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-4);
+  background: var(--deck-2);
+  border: 1px solid var(--rule-hot);
+  border-radius: var(--r);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--deck-3);
+  border-color: var(--phos-dim);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  color: var(--ink-3);
+  border-color: var(--rule);
+  cursor: not-allowed;
+}
+
+/* Primary: solid phosphor, no gradient — the one loud element per screen. */
+.btn--primary {
+  background: var(--phos);
+  border-color: var(--phos);
+  color: var(--void);
+  font-weight: 700;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: #16f39c;
+  border-color: #16f39c;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn--quiet {
+  background: none;
+  border-color: var(--rule);
+  color: var(--ink-2);
+}
+
+.btn--quiet:hover:not(:disabled) {
+  background: var(--deck-2);
+  color: var(--ink);
+}
+
+/* Icon-only control — always paired with an aria-label. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  color: var(--ink-2);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.icon-btn:hover {
+  color: var(--phos);
+  background: var(--deck-2);
+  border-color: var(--rule);
+}
+
+.icon-btn--on {
+  color: var(--phos);
+}
+
+/* ── Field ────────────────────────────────────────────── */
+
+.field {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--s-3);
+  background: var(--deck);
+  border: 1px solid var(--rule-hot);
+  border-radius: var(--r);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--t-data);
+  letter-spacing: 0.12em;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.field::placeholder {
+  color: var(--ink-3);
+  letter-spacing: 0.08em;
+}
+
+.field:focus-visible {
+  border-color: var(--phos);
+  outline: none;
+}
+
+/* ── Readout: label above a tabular value ─────────────── */
+
+.readout {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.readout__value {
+  font-family: var(--font-mono);
+  font-size: var(--t-data);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ── Status pill: solid, hairline-bordered, never a gradient ── */
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 3px var(--s-2);
+  border: 1px solid currentColor;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.tag--common { color: var(--rarity-common); }
+.tag--uncommon { color: var(--rarity-uncommon); }
+.tag--rare { color: var(--rarity-rare); }
+.tag--epic { color: var(--rarity-epic); }
+.tag--legendary { color: var(--rarity-legendary); }
+
+/* ── Screen scaffold shared by every non-map view ─────── */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-4);
+  gap: var(--s-4);
+}
+
+.screen__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.screen__title {
+  font-size: var(--t-h1);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.empty {
+  padding: var(--s-10) var(--s-4);
+  text-align: center;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.6;
+}

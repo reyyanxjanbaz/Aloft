@@ -10,11 +10,26 @@ export interface CatchLike {
   distanceKm: number;
 }
 
+/** Semantic icon key — the UI layer maps these to its icon set. */
+export type AchievementIcon =
+  | "departure"
+  | "aircraft"
+  | "world"
+  | "inflight"
+  | "star"
+  | "medal"
+  | "trophy"
+  | "altitude"
+  | "night"
+  | "pin"
+  | "streak"
+  | "timer";
+
 export interface AchievementDef {
   id: string;
   name: string;
   description: string;
-  icon: string;
+  icon: AchievementIcon;
   check: (catches: CatchLike[], now: number) => boolean;
 }
 
@@ -45,29 +60,29 @@ export function streakDays(catches: CatchLike[], now: number): number {
 }
 
 export const ACHIEVEMENTS: AchievementDef[] = [
-  { id: "first-catch", name: "Wheels Up", description: "Catch your first aircraft", icon: "🛫",
+  { id: "first-catch", name: "Wheels Up", description: "Catch your first aircraft", icon: "departure",
     check: (c) => c.length >= 1 },
-  { id: "ten-catches", name: "Frequent Flyer", description: "Catch 10 aircraft", icon: "✈️",
+  { id: "ten-catches", name: "Frequent Flyer", description: "Catch 10 aircraft", icon: "aircraft",
     check: (c) => c.length >= 10 },
-  { id: "fifty-catches", name: "Squadron Leader", description: "Catch 50 aircraft", icon: "🎖️",
+  { id: "fifty-catches", name: "Squadron Leader", description: "Catch 50 aircraft", icon: "world",
     check: (c) => c.length >= 50 },
-  { id: "widebody-5", name: "Widebody Warrior", description: "Catch 5 widebody or jumbo aircraft", icon: "🐋",
+  { id: "widebody-5", name: "Widebody Warrior", description: "Catch 5 widebody or jumbo aircraft", icon: "inflight",
     check: (c) => c.filter(isWide).length >= 5 },
-  { id: "first-rare", name: "Shiny", description: "Catch a rare aircraft", icon: "💎",
+  { id: "first-rare", name: "Shiny", description: "Catch a rare aircraft", icon: "star",
     check: (c) => c.some((x) => atLeastRarity(x, "rare")) },
-  { id: "first-epic", name: "Top Brass", description: "Catch an epic aircraft", icon: "🪖",
+  { id: "first-epic", name: "Top Brass", description: "Catch an epic aircraft", icon: "medal",
     check: (c) => c.some((x) => atLeastRarity(x, "epic")) },
-  { id: "first-legendary", name: "Once in a Lifetime", description: "Catch a legendary aircraft", icon: "👑",
+  { id: "first-legendary", name: "Once in a Lifetime", description: "Catch a legendary aircraft", icon: "trophy",
     check: (c) => c.some((x) => atLeastRarity(x, "legendary")) },
-  { id: "high-roller", name: "High Roller", description: "Catch a plane above 40,000 ft", icon: "🌡️",
+  { id: "high-roller", name: "High Roller", description: "Catch a plane above 40,000 ft", icon: "altitude",
     check: (c) => c.some((x) => x.altFt >= 40_000) },
-  { id: "red-eye", name: "Red-Eye", description: "Catch a plane between midnight and 5 am", icon: "🌙",
+  { id: "red-eye", name: "Red-Eye", description: "Catch a plane between midnight and 5 am", icon: "night",
     check: (c) => c.some((x) => { const h = new Date(x.caughtAt).getHours(); return h >= 0 && h < 5; }) },
-  { id: "overhead", name: "Right Overhead", description: "Catch a plane within 2 km of you", icon: "📡",
+  { id: "overhead", name: "Right Overhead", description: "Catch a plane within 2 km of you", icon: "pin",
     check: (c) => c.some((x) => x.distanceKm < 2) },
-  { id: "streak-3", name: "Hat Trick", description: "Catch planes 3 days in a row", icon: "🔥",
+  { id: "streak-3", name: "Hat Trick", description: "Catch planes 3 days in a row", icon: "streak",
     check: (c, now) => streakDays(c, now) >= 3 },
-  { id: "streak-7", name: "Week Aloft", description: "Catch planes 7 days in a row", icon: "🗓️",
+  { id: "streak-7", name: "Week Aloft", description: "Catch planes 7 days in a row", icon: "timer",
     check: (c, now) => streakDays(c, now) >= 7 },
 ];
 

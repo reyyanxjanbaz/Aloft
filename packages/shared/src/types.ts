@@ -27,7 +27,12 @@ export type ClientMessage = {
   type: "sub";
   lat: number;
   lon: number;
-  radiusKm: number;
+  /**
+   * How far out to stream aircraft, derived from the map viewport — NOT the
+   * capture radius. The scope shows everything you can see; you can only
+   * capture what is within CAPTURE_RADIUS_KM.
+   */
+  viewRadiusKm: number;
 };
 
 /** Server → client messages. */
@@ -35,8 +40,11 @@ export type ServerMessage =
   | { type: "planes"; now: number; aircraft: AircraftState[] }
   | { type: "error"; message: string };
 
-export const DEFAULT_RADIUS_KM = 15;
-export const MAX_RADIUS_KM = 100;
+/** Range within which an aircraft can be hunted, and which the geofence watches. */
+export const CAPTURE_RADIUS_KM = 15;
+/** Upper bound on viewport streaming — keeps one upstream request per cell sane. */
+export const MAX_VIEW_RADIUS_KM = 250;
+export const MIN_VIEW_RADIUS_KM = 5;
 
 /** POST /catch request body. `ts` is the client's catch moment (ms epoch). */
 export interface CatchRequest {

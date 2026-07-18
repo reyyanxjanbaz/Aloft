@@ -1,59 +1,38 @@
-import { useEffect, useState } from "react";
-import { DEFAULT_RADIUS_KM } from "@aloft/shared";
-import { Credits } from "./components/Credits";
-import { InstallPrompt } from "./components/InstallPrompt";
+import { useEffect } from "react";
+import { CAPTURE_RADIUS_KM } from "@aloft/shared";
+import { Shell } from "./components/Shell";
 import { HangarView } from "./features/hangar/HangarView";
 import { HuntView } from "./features/hunt/HuntView";
-import { PlaneCard } from "./features/radar/PlaneCard";
-import { RadarMap } from "./features/radar/RadarMap";
+import { RadarView } from "./features/radar/RadarView";
 import { RevealView } from "./features/reveal/RevealView";
 import { SocialView } from "./features/social/SocialView";
-import { isMuted, primeAudio, setMuted } from "./lib/feedback";
+import { SystemView } from "./features/system/SystemView";
 import { ensurePlayer } from "./lib/player";
-import { useGeolocation } from "./lib/useGeolocation";
-import { useApp } from "./state/app";
-import { connectSky, disconnectSky, usePlanes } from "./state/planes";
+import { useGeolocation, type PlayerPosition } from "./lib/useGeolocation";
+import { isTab, useApp } from "./state/app";
+import { connectSky, disconnectSky } from "./state/planes";
+import { IconWarning, IconWorld } from "./ui/icons";
 
 export function App() {
   const { position, error } = useGeolocation();
   const view = useApp((s) => s.view);
-  const go = useApp((s) => s.go);
-  const connected = usePlanes((s) => s.connected);
-  const planeCount = usePlanes((s) => s.planes.size);
-  const [showCredits, setShowCredits] = useState(false);
-  const [muted, setMutedState] = useState(isMuted());
 
   useEffect(() => {
     void ensurePlayer();
   }, []);
 
+  // Open the feed once a position is known; the map re-aims it as it moves.
   useEffect(() => {
     if (!position) return;
-    connectSky(position.lat, position.lon, DEFAULT_RADIUS_KM);
+    connectSky({ lat: position.lat, lon: position.lon, viewRadiusKm: CAPTURE_RADIUS_KM * 4 });
     return () => disconnectSky();
   }, [position?.lat, position?.lon]);
 
-  if (error) {
-    return (
-      <div className="splash">
-        <h1>Aloft</h1>
-        <p className="splash__error">{error}</p>
-        <p>Aloft needs your location to find the planes above you. You can also try a simulated position, e.g. <code>?lat=51.47&amp;lon=-0.45</code> (Heathrow).</p>
-      </div>
-    );
-  }
-
-  if (!position) {
-    return (
-      <div className="splash">
-        <h1>Aloft</h1>
-        <p>Finding you on the map…</p>
-      </div>
-    );
-  }
+  if (error) return <Boot error={error} />;
+  if (!position) return <Boot />;
 
   if (view.name === "hunt") return <HuntView hex={view.hex} position={position} />;
-  if (view.name === "reveal")
+  if (view.name === "reveal") {
     return (
       <RevealView
         entry={view.entry}
@@ -62,36 +41,53 @@ export function App() {
         position={position}
       />
     );
-  if (view.name === "hangar") return <HangarView />;
-  if (view.name === "social") return <SocialView />;
+  }
 
+  const tab = isTab(view) ? view.name : "radar";
   return (
-    <div className="app">
-      <RadarMap position={position} />
-      <header className="hud">
-        <span className="hud__logo">✈ Aloft</span>
-        <span className={connected ? "hud__status hud__status--on" : "hud__status"}>
-          {connected ? `${planeCount} aircraft in range` : "connecting…"}
-        </span>
-        {position.simulated && <span className="hud__sim">SIM</span>}
-        <button
-          className="hud__hangar"
-          title={muted ? "Unmute" : "Mute"}
-          onClick={() => {
-            primeAudio();
-            setMuted(!muted);
-            setMutedState(!muted);
-          }}
-        >
-          {muted ? "🔇" : "🔊"}
-        </button>
-        <button className="hud__hangar" title="Credits" onClick={() => setShowCredits(true)}>ⓘ</button>
-        <button className="hud__hangar" onClick={() => go({ name: "social" })}>👥</button>
-        <button className="hud__hangar" onClick={() => go({ name: "hangar" })}>🛫 Hangar</button>
-      </header>
-      <InstallPrompt />
-      <PlaneCard position={position} />
-      {showCredits && <Credits onClose={() => setShowCredits(false)} />}
+    <Shell tab={tab}>
+      <TabView tab={tab} position={position} />
+    </Shell>
+  );
+}
+
+function TabView({ tab, position }: { tab: string; position: PlayerPosition }) {
+  switch (tab) {
+    case "hangar":
+      return <HangarView />;
+    case "social":
+      return <SocialView />;
+    case "system":
+      return <SystemView position={position} />;
+    default:
+      return <RadarView position={position} />;
+  }
+}
+
+/** Pre-flight screen: acquiring position, or explaining why we can't. */
+function Boot({ error }: { error?: string }) {
+  return (
+    <div className="boot">
+      <div className="boot__mark">Aloft</div>
+      {error ? (
+        <>
+          <p className="boot__line boot__line--warn">
+            <IconWarning size={16} weight="bold" />
+            {error}
+          </p>
+          <p className="boot__help">
+            Aloft needs your location to sweep the sky above you. Enable location access, or open a
+            simulated position by adding <code>?lat=51.47&amp;lon=-0.45</code> to the address — that
+            puts you on final approach at Heathrow.
+          </p>
+        </>
+      ) : (
+        <p className="boot__line">
+          <IconWorld size={16} weight="bold" />
+          Acquiring position
+          <span className="boot__dots" aria-hidden="true" />
+        </p>
+      )}
     </div>
   );
 }

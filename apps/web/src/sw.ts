@@ -33,7 +33,7 @@ self.addEventListener("push", (event: { data?: { json(): PushPayload }; waitUnti
     /* non-JSON push — show the default */
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title ?? "✈ Aloft", {
+    self.registration.showNotification(payload.title ?? "Aloft", {
       body: payload.body ?? "Something is in your sky…",
       icon: "/pwa-192.png",
       badge: "/pwa-192.png",

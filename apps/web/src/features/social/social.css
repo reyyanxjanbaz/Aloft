@@ -1,0 +1,178 @@
+/* ── Your identity card ───────────────────────────────── */
+
+.me {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  background: var(--deck);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+}
+
+.me__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.me__row--code {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--rule);
+}
+
+.me__name {
+  width: 100%;
+  padding: var(--s-1) 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--rule-hot);
+  font-size: var(--t-h1);
+  font-weight: 600;
+  color: var(--ink);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.me__name:focus-visible {
+  border-bottom-color: var(--phos);
+  outline: none;
+}
+
+/* The code is the thing people read aloud — give it real presence. */
+.me__code {
+  font-family: var(--font-mono);
+  font-size: var(--t-data-xl);
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: var(--phos);
+}
+
+.add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--s-2);
+}
+
+.note {
+  font-size: var(--t-data-sm);
+  font-family: var(--font-mono);
+}
+
+.note--ok { color: var(--phos); }
+.note--warn { color: var(--crimson); }
+
+/* ── Tabs ─────────────────────────────────────────────── */
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid var(--rule);
+}
+
+.tabs__tab {
+  min-height: 40px;
+  padding: 0 var(--s-2);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.tabs__tab:hover {
+  color: var(--ink-2);
+}
+
+.tabs__tab--on {
+  color: var(--phos);
+  border-bottom-color: var(--phos);
+}
+
+/* ── Rows ─────────────────────────────────────────────── */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  background: var(--deck);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+}
+
+.row--you {
+  border-color: var(--phos-dim);
+}
+
+.row--feed {
+  border-left: 2px solid var(--rarity, var(--rule-hot));
+}
+
+.row--feed .glyph {
+  width: 40px;
+  height: 34px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  color: var(--ink);
+}
+
+.row__main strong {
+  font-size: var(--t-h2);
+  font-weight: 600;
+}
+
+.row__meta {
+  font-size: var(--t-data-sm);
+  color: var(--ink-2);
+}
+
+.row__rank {
+  width: 24px;
+  font-size: var(--t-data);
+  color: var(--phos-dim);
+}
+
+.row__points {
+  font-size: var(--t-h1);
+  font-weight: 700;
+  color: var(--amber);
+}
+
+.row__streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--t-data-sm);
+  color: var(--amber);
+}
+
+.row__you {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--phos);
+}
+
+.card__first {
+  color: var(--amber);
+}

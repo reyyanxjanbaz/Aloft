@@ -1,7 +1,9 @@
 import {
+  CAPTURE_RADIUS_KM,
   deadReckon,
   distanceM,
-  MAX_RADIUS_KM,
+  MAX_VIEW_RADIUS_KM,
+  MIN_VIEW_RADIUS_KM,
   NM_TO_KM,
   rarityFor,
   type AircraftState,
@@ -20,7 +22,8 @@ export interface Subscriber {
   id: number;
   lat: number;
   lon: number;
-  radiusKm: number;
+  /** Viewport radius — how much sky this client is looking at. */
+  viewRadiusKm: number;
   send(msg: ServerMessage): void;
 }
 
@@ -47,7 +50,12 @@ const HISTORY_TTL_MS = 10 * 60_000;
 const HISTORY_MAX_FIXES = 40;
 /** How stale a fix may be (either side) and still validate a catch. */
 const CATCH_TIME_SLACK_MS = 90_000;
-const CATCH_MAX_DISTANCE_KM = MAX_RADIUS_KM + 20;
+/**
+ * Outer bound for accepting a catch. Generous relative to the capture radius so
+ * GPS drift and stale fixes never reject a legitimate capture, while still
+ * rejecting anything absurd.
+ */
+const CATCH_MAX_DISTANCE_KM = CAPTURE_RADIUS_KM * 6;
 
 interface AirframeHistory {
   latest: AircraftState;
@@ -124,7 +132,10 @@ export class SkyHub {
   }
 
   subscribe(sub: Subscriber): void {
-    sub.radiusKm = Math.min(Math.max(sub.radiusKm, 1), MAX_RADIUS_KM);
+    sub.viewRadiusKm = Math.min(
+      Math.max(sub.viewRadiusKm, MIN_VIEW_RADIUS_KM),
+      MAX_VIEW_RADIUS_KM
+    );
     this.unsubscribe(sub.id);
 
     const key = cellKey(sub.lat, sub.lon);
@@ -183,7 +194,7 @@ export class SkyHub {
       cell.polling = true;
       try {
         const maxSubRadius = Math.max(
-          ...[...cell.subscribers.values()].map((s) => s.radiusKm),
+          ...[...cell.subscribers.values()].map((s) => s.viewRadiusKm),
           0
         );
         const radiusNm = (CELL_SLACK_KM + maxSubRadius) / NM_TO_KM;
@@ -203,8 +214,10 @@ export class SkyHub {
   }
 
   private deliver(cell: Cell, sub: Subscriber): void {
+    // Stream everything inside the viewport, not just what's capturable —
+    // an empty-looking scope was the single worst thing about the old build.
     const aircraft = cell.lastAircraft.filter(
-      (ac) => distanceM(sub.lat, sub.lon, ac.lat, ac.lon) <= sub.radiusKm * 1000
+      (ac) => distanceM(sub.lat, sub.lon, ac.lat, ac.lon) <= sub.viewRadiusKm * 1000
     );
     sub.send({ type: "planes", now: Date.now(), aircraft });
   }

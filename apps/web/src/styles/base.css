@@ -1,0 +1,141 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-weight: 500;
+  line-height: 1.45;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: var(--phos);
+  text-underline-offset: 2px;
+}
+
+svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Focus is always visible — it was removed entirely in the old build. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 1px solid var(--phos);
+  outline-offset: 2px;
+}
+
+/* ── Type utilities ───────────────────────────────────── */
+
+/* Instrument label: the small caps rubric above every readout. */
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* All numbers are tabular so digits never jitter as values update. */
+.data {
+  font-family: var(--font-mono);
+  font-size: var(--t-data);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.data--xl {
+  font-size: var(--t-data-xl);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.data--sm {
+  font-size: var(--t-data-sm);
+}
+
+.data--dim {
+  color: var(--ink-2);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

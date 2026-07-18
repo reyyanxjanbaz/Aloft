@@ -1,15 +1,28 @@
 import { useCallback, useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import type { ActivityItem, FriendSummary, LeaderboardRow, PlayerProfile, SharedCatch } from "@aloft/shared";
 import { share } from "../../lib/platform";
 import { cachedPlayer, renamePlayer } from "../../lib/player";
-import { useApp } from "../../state/app";
-import { addFriend, fetchActivity, fetchFriendHangar, fetchFriends, fetchLeaderboard, removeFriend } from "./api";
+import { IconAdd, IconBack, IconRemove, IconShare, IconStar, IconStreak } from "../../ui/icons";
+import { RARITY_LABEL } from "../../ui/rarity";
+import { AircraftGlyph } from "../hangar/AircraftGlyph";
+import {
+  addFriend,
+  fetchActivity,
+  fetchFriendHangar,
+  fetchFriends,
+  fetchLeaderboard,
+  removeFriend,
+} from "./api";
+import "./social.css";
 
-type Tab = "friends" | "board" | "feed";
+type Tab = "friends" | "week" | "activity";
 
-const RARITY_EMOJI: Record<string, string> = {
-  common: "⚪", uncommon: "🟢", rare: "🔵", epic: "🟣", legendary: "🟡",
-};
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: "friends", label: "Friends" },
+  { id: "week", label: "This week" },
+  { id: "activity", label: "Activity" },
+];
 
 function timeAgo(ts: number): string {
   const mins = Math.round((Date.now() - ts) / 60_000);
@@ -21,7 +34,6 @@ function timeAgo(ts: number): string {
 }
 
 export function SocialView() {
-  const go = useApp((s) => s.go);
   const [player, setPlayer] = useState<PlayerProfile | null>(cachedPlayer());
   const [tab, setTab] = useState<Tab>("friends");
   const [friends, setFriends] = useState<FriendSummary[]>([]);
@@ -30,7 +42,7 @@ export function SocialView() {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [offline, setOffline] = useState(false);
-  const [viewing, setViewing] = useState<{ player: PlayerProfile; catches: SharedCatch[] } | null>(null);
+  const [visiting, setVisiting] = useState<{ player: PlayerProfile; catches: SharedCatch[] } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -48,176 +60,223 @@ export function SocialView() {
     void refresh();
   }, [refresh]);
 
-  // Accept invite links: /?invite=ABC123
   useEffect(() => {
     const invite = new URLSearchParams(window.location.search).get("invite");
     if (!invite || !player) return;
     void addFriend(invite).then((r) => {
-      setMessage(r.ok ? `Added ${r.friend?.name ?? "spotter"}!` : (r.reason ?? "Could not add"));
+      setMessage(r.ok ? `${r.friend?.name ?? "Spotter"} added` : (r.reason ?? "Could not add that code"));
       if (r.ok) void refresh();
     });
   }, [player, refresh]);
 
-  const submitCode = async () => {
+  const submit = async () => {
     if (!code.trim()) return;
     const r = await addFriend(code.trim().toUpperCase());
-    setMessage(r.ok ? `Added ${r.friend?.name ?? "spotter"}!` : (r.reason ?? "Could not add"));
+    setMessage(r.ok ? `${r.friend?.name ?? "Spotter"} added` : (r.reason ?? "Could not add that code"));
     if (r.ok) {
       setCode("");
       void refresh();
     }
   };
 
-  const shareInvite = async () => {
-    if (!player) return;
-    const url = `${window.location.origin}/?invite=${player.code}`;
-    const result = await share("Aloft", `Add me on Aloft — my spotter code is ${player.code}`, url);
-    if (result === "copied") setMessage("Invite link copied to clipboard");
-    if (result === "failed") setMessage(`Share your code: ${player.code}`);
-  };
-
-  if (viewing) {
+  if (visiting) {
     return (
-      <div className="social">
-        <header className="hangar__header">
-          <button className="btn" onClick={() => setViewing(null)}>← Back</button>
-          <h1>{viewing.player.name}</h1>
-          <span className="hangar__score">{viewing.catches.length} shown</span>
+      <div className="screen">
+        <header className="screen__head">
+          <button className="btn btn--quiet" onClick={() => setVisiting(null)}>
+            <IconBack size={16} weight="bold" />
+            Back
+          </button>
+          <h1 className="screen__title">{visiting.player.name}</h1>
         </header>
-        {viewing.catches.length === 0 && <p className="hangar__empty">Their hangar is still empty.</p>}
-        <div className="hangar__grid">
-          {viewing.catches.map((c) => (
-            <div key={c.id} className={`hangar__card hangar__card--${c.rarity}`}>
-              <span className="hangar__card-type">{c.typeLabel}</span>
-              <span className="hangar__card-id">{c.callsign || c.reg || c.hex.toUpperCase()}</span>
-              <span className="hangar__card-rarity">
-                {c.rarity}{c.firstSpotter ? " · 🥇 first" : ""}
-              </span>
-              <span className="hangar__card-date">{new Date(c.caughtAt).toLocaleDateString()}</span>
-            </div>
-          ))}
-        </div>
+        {visiting.catches.length === 0 ? (
+          <p className="empty">Their hangar is empty for now.</p>
+        ) : (
+          <ul className="hangar__grid">
+            {visiting.catches.map((c) => (
+              <li key={c.id}>
+                <div className="card" style={{ ["--rarity" as string]: `var(--rarity-${c.rarity})` }}>
+                  <AircraftGlyph typeIcao={c.typeIcao} />
+                  <span className="card__type">{c.typeLabel}</span>
+                  <span className="card__ident mono">{c.callsign || c.hex.toUpperCase()}</span>
+                  <span className="card__foot">
+                    <span className="card__rarity">{RARITY_LABEL[c.rarity]}</span>
+                    {c.firstSpotter && <IconStar size={12} weight="fill" className="card__first" />}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="social">
-      <header className="hangar__header">
-        <button className="btn" onClick={() => go({ name: "radar" })}>← Radar</button>
-        <h1>Spotters</h1>
+    <div className="screen">
+      <header className="screen__head">
+        <h1 className="screen__title">Spotters</h1>
       </header>
 
       {player && (
-        <div className="social__me">
-          <div>
-            <span className="social__label">You are</span>
+        <section className="me">
+          <div className="me__row">
+            <label className="label" htmlFor="spotter-name">
+              Your name
+            </label>
             <input
-              className="social__name"
+              id="spotter-name"
+              className="me__name"
               defaultValue={player.name}
               maxLength={24}
               onBlur={(e) => {
                 const next = e.target.value.trim();
-                if (next && next !== player.name) void renamePlayer(next).then((p) => p && setPlayer(p));
+                if (next && next !== player.name) {
+                  void renamePlayer(next).then((p) => p && setPlayer(p));
+                }
               }}
             />
           </div>
-          <div className="social__code-box">
-            <span className="social__label">Your code</span>
-            <strong className="social__code">{player.code}</strong>
+          <div className="me__row me__row--code">
+            <span className="label">Spotter code</span>
+            <strong className="me__code">{player.code}</strong>
           </div>
-          <button className="btn btn--primary" onClick={() => void shareInvite()}>Invite a friend</button>
-        </div>
+          <button
+            className="btn btn--primary btn--block"
+            onClick={() =>
+              void share(
+                "Aloft",
+                `Add me on Aloft — my spotter code is ${player.code}`,
+                `${window.location.origin}/?invite=${player.code}`
+              ).then((r) => {
+                if (r === "copied") setMessage("Invite link copied");
+                if (r === "failed") setMessage(`Share your code: ${player.code}`);
+              })
+            }
+          >
+            <IconShare size={16} weight="bold" />
+            Invite a friend
+          </button>
+        </section>
       )}
 
-      <div className="social__add">
+      <div className="add">
         <input
-          className="social__input"
-          placeholder="Enter a friend's code"
+          className="field"
+          placeholder="ENTER CODE"
           value={code}
           maxLength={6}
+          aria-label="Friend's spotter code"
           onChange={(e) => setCode(e.target.value.toUpperCase())}
-          onKeyDown={(e) => e.key === "Enter" && void submitCode()}
+          onKeyDown={(e) => e.key === "Enter" && void submit()}
         />
-        <button className="btn" onClick={() => void submitCode()}>Add</button>
+        <button className="btn" onClick={() => void submit()} disabled={code.length < 6}>
+          <IconAdd size={16} weight="bold" />
+          Add
+        </button>
       </div>
-      {message && <p className="social__message">{message}</p>}
-      {offline && <p className="social__message">Can't reach the tower — social is offline.</p>}
 
-      <div className="social__tabs">
-        {(["friends", "board", "feed"] as Tab[]).map((t) => (
+      {message && <p className="note note--ok">{message}</p>}
+      {offline && <p className="note note--warn">No link to the tower — spotters are offline.</p>}
+
+      <div className="tabs" role="tablist">
+        {TABS.map((t) => (
           <button
-            key={t}
-            className={tab === t ? "social__tab social__tab--on" : "social__tab"}
-            onClick={() => setTab(t)}
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            className={tab === t.id ? "tabs__tab tabs__tab--on" : "tabs__tab"}
+            onClick={() => setTab(t.id)}
           >
-            {t === "friends" ? "Friends" : t === "board" ? "This week" : "Activity"}
+            {t.label}
           </button>
         ))}
       </div>
 
       {tab === "friends" && (
-        <div className="social__list">
-          {friends.length === 0 && <p className="hangar__empty">No friends yet — share your code above.</p>}
-          {friends.map((f) => (
-            <div key={f.id} className="social__row">
+        <ul className="rows">
+          {friends.length === 0 && <p className="empty">No friends yet. Share your code above.</p>}
+          {friends.map((f, i) => (
+            <motion.li
+              key={f.id}
+              className="row"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04, duration: 0.28 }}
+            >
               <button
-                className="social__row-main"
+                className="row__main"
                 onClick={() =>
                   void fetchFriendHangar(f.id)
-                    .then(setViewing)
+                    .then(setVisiting)
                     .catch(() => setMessage("Could not open that hangar"))
                 }
               >
                 <strong>{f.name}</strong>
-                <span className="social__row-stats">
+                <span className="row__meta mono">
                   {f.stats.catches} caught · {f.stats.rarityScore} pts
-                  {f.stats.streak > 1 ? ` · 🔥 ${f.stats.streak}d` : ""}
-                  {f.stats.bestRarity ? ` · best ${RARITY_EMOJI[f.stats.bestRarity]}` : ""}
+                  {f.stats.firstSpots > 0 && ` · ${f.stats.firstSpots} first`}
                 </span>
               </button>
+              {f.stats.streak > 1 && (
+                <span className="row__streak">
+                  <IconStreak size={12} weight="fill" />
+                  <span className="mono">{f.stats.streak}</span>
+                </span>
+              )}
               <button
-                className="social__remove"
-                title="Remove friend"
+                className="icon-btn"
+                aria-label={`Remove ${f.name}`}
                 onClick={() => void removeFriend(f.id).then(refresh)}
               >
-                ✕
+                <IconRemove size={16} />
               </button>
-            </div>
+            </motion.li>
           ))}
-        </div>
+        </ul>
       )}
 
-      {tab === "board" && (
-        <div className="social__list">
+      {tab === "week" && (
+        <ul className="rows">
+          {board.length <= 1 && <p className="empty">Add friends to race them each week.</p>}
           {board.map((row, i) => (
-            <div key={row.id} className={row.isYou ? "social__row social__row--you" : "social__row"}>
-              <span className="social__rank">{i + 1}</span>
-              <span className="social__row-main">
-                <strong>{row.name}{row.isYou ? " (you)" : ""}</strong>
-                <span className="social__row-stats">{row.catches} caught this week</span>
+            <li key={row.id} className={row.isYou ? "row row--you" : "row"}>
+              <span className="row__rank mono">{String(i + 1).padStart(2, "0")}</span>
+              <span className="row__main">
+                <strong>
+                  {row.name}
+                  {row.isYou && <span className="row__you"> you</span>}
+                </strong>
+                <span className="row__meta mono">{row.catches} caught this week</span>
               </span>
-              <span className="social__points">{row.rarityScore}</span>
-            </div>
+              <span className="row__points mono">{row.rarityScore}</span>
+            </li>
           ))}
-          {board.length <= 1 && <p className="hangar__empty">Add friends to race them each week.</p>}
-        </div>
+        </ul>
       )}
 
-      {tab === "feed" && (
-        <div className="social__list">
-          {feed.length === 0 && <p className="hangar__empty">Nothing notable yet — rare catches show up here.</p>}
+      {tab === "activity" && (
+        <ul className="rows">
+          {feed.length === 0 && <p className="empty">Rare catches by your friends show up here.</p>}
           {feed.map((item) => (
-            <div key={`${item.player.id}:${item.catch.id}`} className="social__feed-item">
-              <span className="social__feed-emoji">{RARITY_EMOJI[item.catch.rarity]}</span>
-              <span>
-                <strong>{item.player.name}</strong> caught a {item.catch.typeLabel}
-                {item.catch.firstSpotter && <span className="social__first"> 🥇 first spot</span>}
-                <small>{timeAgo(item.catch.caughtAt)}</small>
+            <li
+              key={`${item.player.id}:${item.catch.id}`}
+              className="row row--feed"
+              style={{ ["--rarity" as string]: `var(--rarity-${item.catch.rarity})` }}
+            >
+              <AircraftGlyph typeIcao={item.catch.typeIcao} />
+              <span className="row__main">
+                <strong>
+                  {item.player.name} caught a {item.catch.typeLabel}
+                </strong>
+                <span className="row__meta mono">
+                  {RARITY_LABEL[item.catch.rarity]}
+                  {item.catch.firstSpotter && " · first spot"} · {timeAgo(item.catch.caughtAt)}
+                </span>
               </span>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );

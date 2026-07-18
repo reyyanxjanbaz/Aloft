@@ -56,7 +56,7 @@ export function startGeofence(provider: FlightProvider, store: PushStore): void 
         const rarity = rarityFor(best.typeIcao);
         const from = compassWord(bearingDeg(sub.lat, sub.lon, best.lat, best.lon));
         const payload = JSON.stringify({
-          title: "✈ Aloft",
+          title: "Aloft",
           body: `${TEASER[rarity]} from the ${from}…`,
           hex: best.hex,
         });

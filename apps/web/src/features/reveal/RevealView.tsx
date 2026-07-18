@@ -1,37 +1,19 @@
-import { Suspense, useEffect, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Stars } from "@react-three/drei";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements } from "@aloft/shared";
 import { lookupRoute, type FlightRoute } from "../../lib/adsbdb";
 import { sfxAchievement, sfxReveal } from "../../lib/feedback";
 import { enableSkyPings, pushPermission } from "../../lib/push";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { useApp } from "../../state/app";
+import { AchievementIcon } from "../../ui/AchievementIcon";
+import { IconBell, IconCheck, IconMedal, IconStar } from "../../ui/icons";
+import { RARITY_LABEL } from "../../ui/rarity";
 import { getSeenAchievements, listCatches, setSeenAchievements, type HangarEntry } from "../hangar/db";
-import { AircraftModel } from "./AircraftModel";
+import { Stage } from "./Stage";
+import "./reveal.css";
 
-const RARITY_LABEL: Record<string, string> = {
-  common: "COMMON",
-  uncommon: "UNCOMMON",
-  rare: "RARE",
-  epic: "EPIC",
-  legendary: "LEGENDARY",
-};
-
-export function ModelStage({ entry }: { entry: HangarEntry }) {
-  return (
-    <Canvas camera={{ position: [0, 2.5, 9], fov: 45 }}>
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[6, 8, 4]} intensity={1.4} />
-      <directionalLight position={[-6, -2, -4]} intensity={0.3} color="#7dd3fc" />
-      <Suspense fallback={null}>
-        <Stars radius={60} depth={30} count={1200} factor={3} fade speed={0.6} />
-        <AircraftModel typeIcao={entry.typeIcao} callsign={entry.callsign} />
-      </Suspense>
-      <OrbitControls enablePan={false} minDistance={4} maxDistance={16} />
-    </Canvas>
-  );
-}
+const ease = [0.16, 1, 0.3, 1] as const;
 
 export function RevealView({
   entry,
@@ -47,7 +29,7 @@ export function RevealView({
   const go = useApp((s) => s.go);
   const [route, setRoute] = useState<FlightRoute | null>(null);
   const [unlocked, setUnlocked] = useState<string[]>([]);
-  const [pingState, setPingState] = useState<"idle" | "busy" | "on" | "failed">(
+  const [pings, setPings] = useState<"idle" | "busy" | "on" | "failed">(
     pushPermission() === "granted" ? "on" : "idle"
   );
 
@@ -59,16 +41,13 @@ export function RevealView({
     sfxReveal(entry.rarity);
   }, [entry.id, entry.rarity]);
 
-  // Celebrate newly earned achievements exactly once.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const [catches, seen] = await Promise.all([listCatches(), getSeenAchievements()]);
-      const current = evaluateAchievements(catches);
-      const fresh = current.filter((id) => !seen.has(id));
+      const fresh = evaluateAchievements(catches).filter((id) => !seen.has(id));
       if (cancelled || fresh.length === 0) return;
       setUnlocked(fresh);
-      // Let the reveal chord land before the achievement chime.
       setTimeout(sfxAchievement, 900);
       await setSeenAchievements(new Set([...seen, ...fresh]));
     })();
@@ -78,73 +57,135 @@ export function RevealView({
   }, [entry.id]);
 
   const freshDefs = ACHIEVEMENTS.filter((a) => unlocked.includes(a.id));
-  const showPingOptIn = isNew && pingState !== "on" && pushPermission() === "default";
+  // Offer alerts at the moment of a first catch — peak motivation, once only.
+  const offerPings = isNew && pings !== "on" && pushPermission() === "default";
 
   return (
-    <div className="reveal">
-      <div className={`reveal__banner reveal__banner--${entry.rarity}`}>
-        {RARITY_LABEL[entry.rarity]}
-        {!isNew && <span className="reveal__again"> · logged again</span>}
-      </div>
-      <h1 className="reveal__type">{entry.typeLabel}</h1>
-      <p className="reveal__identity">
-        {entry.callsign || "No callsign"} {entry.reg ? `· ${entry.reg}` : ""}
-      </p>
-      {route && (
-        <p className="reveal__route">
-          {route.origin} → {route.destination}
-        </p>
-      )}
-
-      {firstSpotter && (
-        <div className="reveal__first">🥇 First Spotter — nobody on Aloft had caught this airframe before</div>
-      )}
-
+    <div className="reveal" style={{ ["--rarity" as string]: `var(--rarity-${entry.rarity})` }}>
       <div className="reveal__stage">
-        <ModelStage entry={entry} />
-      </div>
-
-      {freshDefs.length > 0 && (
-        <div className="reveal__achievements">
-          {freshDefs.map((a) => (
-            <div key={a.id} className="achievement-chip">
-              <span className="achievement-chip__icon">{a.icon}</span>
-              <span>
-                <strong>{a.name}</strong>
-                <small>{a.description}</small>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <dl className="reveal__stats">
-        <div><dt>Caught at</dt><dd>{entry.altFt > 0 ? `${Math.round(entry.altFt).toLocaleString()} ft` : "on ground"}</dd></div>
-        <div><dt>Speed</dt><dd>{Math.round(entry.gsKt)} kt</dd></div>
-        <div><dt>Distance</dt><dd>{entry.distanceKm.toFixed(1)} km</dd></div>
-      </dl>
-
-      {showPingOptIn && (
-        <button
-          className="btn reveal__pings"
-          disabled={pingState === "busy"}
-          onClick={() => {
-            setPingState("busy");
-            enableSkyPings(position.lat, position.lon)
-              .then(() => setPingState("on"))
-              .catch(() => setPingState("failed"));
-          }}
+        <Stage typeIcao={entry.typeIcao} callsign={entry.callsign} />
+        <motion.div
+          className="reveal__badge"
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.4, ease }}
         >
-          🔔 Ping me when something good flies over
-        </button>
-      )}
-      {pingState === "on" && <p className="reveal__pings-ok">Sky pings enabled for this spot ✓</p>}
-      {pingState === "failed" && <p className="reveal__pings-fail">Couldn't enable pings — notifications may be blocked.</p>}
-
-      <div className="reveal__actions">
-        <button className="btn btn--primary" onClick={() => go({ name: "hangar" })}>To the Hangar</button>
-        <button className="btn" onClick={() => go({ name: "radar" })}>Back to radar</button>
+          <span className="reveal__rarity">{RARITY_LABEL[entry.rarity]}</span>
+          {!isNew && <span className="reveal__again">Logged again</span>}
+        </motion.div>
+        <span className="reveal__hint label">Drag to inspect</span>
       </div>
+
+      <motion.div
+        className="reveal__body"
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1, duration: 0.45, ease }}
+      >
+        <header className="reveal__head">
+          <p className="label">Captured</p>
+          <h1 className="reveal__type">{entry.typeLabel}</h1>
+          <p className="reveal__ident mono">
+            {entry.callsign || "No callsign"}
+            {entry.reg && <span className="reveal__reg"> · {entry.reg}</span>}
+          </p>
+        </header>
+
+        {firstSpotter && (
+          <motion.p
+            className="reveal__first"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5, duration: 0.4 }}
+          >
+            <IconStar size={14} weight="fill" />
+            First spotter — nobody on Aloft had caught this airframe before
+          </motion.p>
+        )}
+
+        {route && (
+          <div className="reveal__route">
+            <span>{route.origin}</span>
+            <span className="reveal__route-rule" aria-hidden="true" />
+            <span>{route.destination}</span>
+          </div>
+        )}
+
+        <dl className="reveal__stats">
+          <Stat label="Altitude" value={entry.altFt > 0 ? Math.round(entry.altFt).toLocaleString() : "Ground"} unit={entry.altFt > 0 ? "ft" : ""} />
+          <Stat label="Speed" value={Math.round(entry.gsKt).toString()} unit="kt" />
+          <Stat label="Range" value={entry.distanceKm.toFixed(1)} unit="km" />
+        </dl>
+
+        {freshDefs.length > 0 && (
+          <ul className="reveal__unlocks">
+            {freshDefs.map((a, i) => (
+              <motion.li
+                key={a.id}
+                className="unlock"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.7 + i * 0.09, duration: 0.35, ease }}
+              >
+                <span className="unlock__icon">
+                  <AchievementIcon name={a.icon} size={18} weight="bold" />
+                </span>
+                <span className="unlock__text">
+                  <strong>{a.name}</strong>
+                  <span>{a.description}</span>
+                </span>
+                <IconMedal size={14} className="unlock__flag" />
+              </motion.li>
+            ))}
+          </ul>
+        )}
+
+        {offerPings && (
+          <button
+            className="btn btn--block"
+            disabled={pings === "busy"}
+            onClick={() => {
+              setPings("busy");
+              enableSkyPings(position.lat, position.lon)
+                .then(() => setPings("on"))
+                .catch(() => setPings("failed"));
+            }}
+          >
+            <IconBell size={16} />
+            Alert me when something rare flies over
+          </button>
+        )}
+        {pings === "on" && (
+          <p className="reveal__note reveal__note--ok">
+            <IconCheck size={14} weight="bold" /> Sky alerts are on for this spot
+          </p>
+        )}
+        {pings === "failed" && (
+          <p className="reveal__note reveal__note--warn">
+            Alerts are blocked in your browser settings.
+          </p>
+        )}
+
+        <div className="reveal__actions">
+          <button className="btn btn--primary" onClick={() => go({ name: "hangar" })}>
+            Add to hangar
+          </button>
+          <button className="btn btn--quiet" onClick={() => go({ name: "radar" })}>
+            Back to scope
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function Stat({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <div className="readout">
+      <dt className="label">{label}</dt>
+      <dd className="readout__value">
+        {value} {unit && <span className="unit">{unit}</span>}
+      </dd>
     </div>
   );
 }

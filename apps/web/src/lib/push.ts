@@ -1,4 +1,4 @@
-import { DEFAULT_RADIUS_KM } from "@aloft/shared";
+import { CAPTURE_RADIUS_KM } from "@aloft/shared";
 import { SKY_URL } from "../state/planes";
 
 export function pushSupported(): boolean {
@@ -20,7 +20,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
  * Full opt-in flow: permission → VAPID key → browser subscription → register
  * the player's location with the sky geofence. Call from a user gesture.
  */
-export async function enableSkyPings(lat: number, lon: number, radiusKm = DEFAULT_RADIUS_KM): Promise<void> {
+export async function enableSkyPings(lat: number, lon: number, radiusKm = CAPTURE_RADIUS_KM): Promise<void> {
   if (!pushSupported()) throw new Error("Push is not supported here");
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("Notifications were declined");

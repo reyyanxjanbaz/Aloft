@@ -1,0 +1,231 @@
+.scope {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.scope__map {
+  position: absolute;
+  inset: 0;
+}
+
+.scope__map canvas {
+  outline: none;
+}
+
+/* Hide the basemap's own chrome — the scope owns its bezel. */
+.scope__map .maplibregl-ctrl-bottom-left,
+.scope__map .maplibregl-ctrl-bottom-right,
+.scope__map .maplibregl-ctrl-top-right {
+  display: none;
+}
+
+/* ── Range legend ─────────────────────────────────────── */
+
+/* One row that wraps, so the legend and the simulated flag can never collide. */
+.scope__hud {
+  position: absolute;
+  top: var(--s-3);
+  left: var(--s-3);
+  right: calc(var(--s-3) + 52px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  pointer-events: none;
+}
+
+.scope__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--void);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+}
+
+.scope__legend-rule {
+  width: 1px;
+  height: 12px;
+  background: var(--rule-hot);
+}
+
+.scope__legend-count {
+  color: var(--phos);
+}
+
+.scope__sim {
+  padding: var(--s-2) var(--s-3);
+  background: var(--void);
+  border: 1px solid var(--amber);
+  border-radius: var(--r);
+  color: var(--amber);
+}
+
+.scope__recenter {
+  position: absolute;
+  top: var(--s-3);
+  right: var(--s-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: var(--void);
+  border: 1px solid var(--rule-hot);
+  border-radius: var(--r);
+  color: var(--phos);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.scope__recenter:hover {
+  background: var(--deck-2);
+}
+
+/* ── Feed states ──────────────────────────────────────── */
+
+.scope__offline,
+.scope__empty {
+  position: absolute;
+  left: var(--s-3);
+  right: var(--s-3);
+  bottom: var(--s-3);
+  padding: var(--s-3);
+}
+
+.scope__offline {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  border-color: var(--crimson);
+  color: var(--ink);
+}
+
+.scope__offline svg {
+  color: var(--crimson);
+  margin-top: 2px;
+}
+
+.scope__offline strong {
+  display: block;
+  font-size: var(--t-h2);
+  margin-bottom: 2px;
+}
+
+.scope__offline p {
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.scope__offline code {
+  font-family: var(--font-mono);
+  font-size: var(--t-data-sm);
+  color: var(--phos);
+}
+
+.scope__empty {
+  text-align: center;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+
+/* ── Contact readout ──────────────────────────────────── */
+
+.contact {
+  position: absolute;
+  left: var(--s-3);
+  right: var(--s-3);
+  bottom: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  background: var(--void);
+  border: 1px solid var(--rule-hot);
+  border-radius: var(--r);
+  max-height: calc(100% - var(--s-8));
+  overflow-y: auto;
+}
+
+.contact__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.contact__ident {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.contact__callsign {
+  font-family: var(--font-mono);
+  font-size: var(--t-h1);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--phos);
+}
+
+.contact__type {
+  margin-top: calc(var(--s-3) * -1);
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+
+.contact__route {
+  padding: var(--s-2) 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--t-small);
+}
+
+.contact__route-legs {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+/* The leg rule stands in for the great-circle track between airports. */
+.contact__route-rule {
+  flex: 1;
+  height: 1px;
+  min-width: var(--s-6);
+  background: var(--rule-hot);
+}
+
+.contact__route-pending {
+  color: var(--ink-3);
+}
+
+.contact__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-3) var(--s-4);
+}
+
+.contact__hint {
+  font-size: var(--t-data-sm);
+  color: var(--ink-3);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.contact__lost {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+
+@media (max-width: 340px) {
+  .contact__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

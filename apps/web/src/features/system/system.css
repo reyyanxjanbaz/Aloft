@@ -1,0 +1,99 @@
+.sys {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding-bottom: var(--s-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.sys:last-child {
+  border-bottom: none;
+}
+
+.sys__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.sys__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sys__text strong {
+  font-size: var(--t-h2);
+  font-weight: 600;
+}
+
+.sys__text span {
+  font-size: var(--t-data-sm);
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+
+.sys__on {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  font-family: var(--font-mono);
+  font-size: var(--t-data-sm);
+  color: var(--phos);
+  white-space: nowrap;
+}
+
+.sys__install {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  background: var(--deck);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.55;
+}
+
+.sys__install svg {
+  color: var(--phos);
+  margin-top: 2px;
+}
+
+.sys__copy {
+  font-size: var(--t-small);
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.sys__copy strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sys__copy--dim {
+  color: var(--ink-3);
+  font-size: var(--t-data-sm);
+}
+
+.sys__credits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  list-style: none;
+  font-size: var(--t-data-sm);
+}
+
+.sys__credits li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: baseline;
+  color: var(--ink-2);
+}
+
+.sys__credits strong {
+  color: var(--phos);
+}
