@@ -1,0 +1,77 @@
+import { familyOf } from "./aircraft";
+import { RARITY_ORDER, type Rarity } from "./rarity";
+
+/** The slice of a hangar entry the achievement engine needs. */
+export interface CatchLike {
+  typeIcao?: string;
+  rarity: Rarity;
+  caughtAt: number;
+  altFt: number;
+  distanceKm: number;
+}
+
+export interface AchievementDef {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  check: (catches: CatchLike[], now: number) => boolean;
+}
+
+const atLeastRarity = (c: CatchLike, r: Rarity) =>
+  RARITY_ORDER.indexOf(c.rarity) >= RARITY_ORDER.indexOf(r);
+
+const isWide = (c: CatchLike) => {
+  const f = familyOf(c.typeIcao);
+  return f === "widebody" || f === "quad";
+};
+
+/**
+ * Consecutive-day catch streak ending today or yesterday (local time),
+ * so an unbroken streak survives until the end of the following day.
+ */
+export function streakDays(catches: CatchLike[], now: number): number {
+  if (catches.length === 0) return 0;
+  const days = new Set(catches.map((c) => new Date(c.caughtAt).toDateString()));
+  const DAY = 86_400_000;
+  let cursor = now;
+  if (!days.has(new Date(cursor).toDateString())) cursor -= DAY; // grace: yesterday may start it
+  let streak = 0;
+  while (days.has(new Date(cursor).toDateString())) {
+    streak++;
+    cursor -= DAY;
+  }
+  return streak;
+}
+
+export const ACHIEVEMENTS: AchievementDef[] = [
+  { id: "first-catch", name: "Wheels Up", description: "Catch your first aircraft", icon: "🛫",
+    check: (c) => c.length >= 1 },
+  { id: "ten-catches", name: "Frequent Flyer", description: "Catch 10 aircraft", icon: "✈️",
+    check: (c) => c.length >= 10 },
+  { id: "fifty-catches", name: "Squadron Leader", description: "Catch 50 aircraft", icon: "🎖️",
+    check: (c) => c.length >= 50 },
+  { id: "widebody-5", name: "Widebody Warrior", description: "Catch 5 widebody or jumbo aircraft", icon: "🐋",
+    check: (c) => c.filter(isWide).length >= 5 },
+  { id: "first-rare", name: "Shiny", description: "Catch a rare aircraft", icon: "💎",
+    check: (c) => c.some((x) => atLeastRarity(x, "rare")) },
+  { id: "first-epic", name: "Top Brass", description: "Catch an epic aircraft", icon: "🪖",
+    check: (c) => c.some((x) => atLeastRarity(x, "epic")) },
+  { id: "first-legendary", name: "Once in a Lifetime", description: "Catch a legendary aircraft", icon: "👑",
+    check: (c) => c.some((x) => atLeastRarity(x, "legendary")) },
+  { id: "high-roller", name: "High Roller", description: "Catch a plane above 40,000 ft", icon: "🌡️",
+    check: (c) => c.some((x) => x.altFt >= 40_000) },
+  { id: "red-eye", name: "Red-Eye", description: "Catch a plane between midnight and 5 am", icon: "🌙",
+    check: (c) => c.some((x) => { const h = new Date(x.caughtAt).getHours(); return h >= 0 && h < 5; }) },
+  { id: "overhead", name: "Right Overhead", description: "Catch a plane within 2 km of you", icon: "📡",
+    check: (c) => c.some((x) => x.distanceKm < 2) },
+  { id: "streak-3", name: "Hat Trick", description: "Catch planes 3 days in a row", icon: "🔥",
+    check: (c, now) => streakDays(c, now) >= 3 },
+  { id: "streak-7", name: "Week Aloft", description: "Catch planes 7 days in a row", icon: "🗓️",
+    check: (c, now) => streakDays(c, now) >= 7 },
+];
+
+/** IDs of every achievement the catch list currently satisfies. */
+export function evaluateAchievements(catches: CatchLike[], now = Date.now()): string[] {
+  return ACHIEVEMENTS.filter((a) => a.check(catches, now)).map((a) => a.id);
+}

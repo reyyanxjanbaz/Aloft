@@ -1,0 +1,6 @@
+{
+  "$comment": "Aloft 3D model library. Drop Draco-compressed .glb files in this folder and add an entry here — no code changes needed. Types not listed (or whose file is missing) fall back to the procedural stylized model. See README 'Adding real 3D models'.",
+  "version": 1,
+  "baseUrl": "/models/",
+  "models": {}
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dev-dist/
+apps/sky/data/
+.DS_Store
+*.local
+.env
+.env.*
