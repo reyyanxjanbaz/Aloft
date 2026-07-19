@@ -1,7 +1,3 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import {
   RARITY_ORDER,
@@ -12,34 +8,14 @@ import {
   type LeaderboardRow,
   type PlayerProfile,
   type PlayerStats,
+  type Rarity,
   type SharedCatch,
 } from "@aloft/shared";
-
-const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "data");
-const FILE = join(DATA_DIR, "social.json");
+import { sql } from "../db";
 
 /** Ambiguous characters (0/O, 1/I) omitted — codes get read aloud and typed by hand. */
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-interface PlayerRecord extends PlayerProfile {
-  /**
-   * Bearer secret proving control of this identity, issued once at creation
-   * and required (via `x-player-token`) for every mutating request. Never
-   * included in any response except the owner's own successful
-   * registration/rename — `PlayerProfile` (what friends/leaderboards see)
-   * has no token field at all.
-   */
-  token: string;
-  createdAt: number;
-  catches: SharedCatch[];
-  friendIds: string[];
-}
-
-interface Snapshot {
-  players: PlayerRecord[];
-  /** hex → player id who caught that airframe first, ever. */
-  firstSpots: Record<string, string>;
-}
+const UNIQUE_VIOLATION = "23505";
 
 /**
  * Safe index into RARITY_ORDER for a string that *should* be a Rarity but
@@ -55,88 +31,77 @@ export function rarityPoints(rarity: string): number {
   return idx >= 0 ? (idx + 1) ** 2 : 0;
 }
 
+function randomCode(): string {
+  return Array.from(
+    { length: 6 },
+    () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+  ).join("");
+}
+
+interface CatchRow {
+  id: string;
+  hex: string;
+  callsign: string;
+  reg: string | null;
+  type_icao: string | null;
+  type_label: string;
+  rarity: string;
+  caught_at: Date;
+  alt_ft: number;
+  distance_km: string; // numeric comes back as string from postgres.js
+  first_spotter: boolean;
+}
+
+function rowToSharedCatch(r: CatchRow): SharedCatch {
+  return {
+    id: r.id,
+    hex: r.hex,
+    callsign: r.callsign,
+    reg: r.reg ?? undefined,
+    typeIcao: r.type_icao ?? undefined,
+    typeLabel: r.type_label,
+    rarity: r.rarity as Rarity,
+    caughtAt: r.caught_at.getTime(),
+    altFt: r.alt_ft,
+    distanceKm: Number(r.distance_km),
+    firstSpotter: r.first_spotter,
+  };
+}
+
 /**
- * File-backed social graph — the MVP stand-in for Supabase/Postgres.
- * Mirrors the shape of `supabase/schema.sql` so the migration is a swap of
- * this class's internals, not of the routes above it.
+ * Postgres-backed social graph. Every operation is a query except token
+ * verification, which is served from an in-memory cache — see verifyToken.
  */
 export class SocialStore {
-  private players = new Map<string, PlayerRecord>();
-  private byCode = new Map<string, string>();
-  private firstSpots = new Map<string, string>();
+  /**
+   * playerId → bearer token. Tokens are immutable once issued and this
+   * service runs as a single instance, so this cache cannot go stale: the
+   * only writer is register(), which updates it in the same call.
+   */
+  private tokens = new Map<string, string>();
 
-  constructor() {
-    if (!existsSync(FILE)) return;
-    try {
-      const snap = JSON.parse(readFileSync(FILE, "utf8")) as Snapshot;
-      for (const p of snap.players) {
-        this.players.set(p.id, p);
-        this.byCode.set(p.code, p.id);
-      }
-      for (const [hex, id] of Object.entries(snap.firstSpots ?? {})) this.firstSpots.set(hex, id);
-    } catch {
-      console.warn("[social] could not parse social.json — starting empty");
-    }
+  /** Loads every token into memory. Called at boot, once the DB is up. */
+  async hydrateTokens(): Promise<void> {
+    const rows = await sql<{ id: string; token: string }[]>`select id, token from players`;
+    this.tokens = new Map(rows.map((r) => [r.id, r.token]));
+    console.log(`[social] token cache hydrated with ${this.tokens.size} players`);
   }
-
-  private persistTimer: NodeJS.Timeout | null = null;
 
   /**
-   * Debounced, async, whole-file rewrite. A burst of mutations (several
-   * catches, a friend add) collapses into one write instead of one
-   * synchronous `writeFileSync` per call — the previous version blocked
-   * Node's single event loop, which is also running every cell's poll timer
-   * and WS fan-out, on every single mutation.
+   * True when `token` is the bearer secret for `playerId`.
+   *
+   * Synchronous on purpose: this is called from the synchronous
+   * `socket.on("message")` callback in index.ts, where returning a promise
+   * would put unhandled rejections on the WebSocket path.
    */
-  private persist(): void {
-    if (this.persistTimer) return;
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = null;
-      void this.writeNow();
-    }, 250);
-    this.persistTimer.unref?.();
+  verifyToken(playerId: string, token: string | undefined): boolean {
+    if (!token) return false;
+    return this.tokens.get(playerId) === token;
   }
 
-  private async writeNow(): Promise<void> {
-    mkdirSync(DATA_DIR, { recursive: true });
-    const snap: Snapshot = {
-      players: [...this.players.values()],
-      firstSpots: Object.fromEntries(this.firstSpots),
-    };
-    try {
-      await writeFile(FILE, JSON.stringify(snap, null, 2));
-    } catch (err) {
-      // In-memory state is now ahead of disk. Retry on the next mutation
-      // (persist() will be called again) rather than losing the write
-      // silently; log loudly since this is the only signal an operator gets.
-      console.error("[social] failed to persist store — will retry on next change:", err);
-    }
-  }
-
-  /** Bypasses the debounce and writes immediately — call before process exit. */
-  async flush(): Promise<void> {
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = null;
-    }
-    await this.writeNow();
-  }
-
-  private newCode(): string {
-    // Even the UUID-derived fallback is checked for uniqueness — a raw
-    // collision would silently steal an existing player's code out from
-    // under them (byCode.set would overwrite the old mapping).
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const code =
-        attempt < 50
-          ? Array.from(
-              { length: 6 },
-              () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
-            ).join("")
-          : randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
-      if (!this.byCode.has(code)) return code;
-    }
-    throw new Error("[social] could not allocate a unique spotter code");
+  /** True when this player id exists. Synchronous, same cache. */
+  knows(playerId: string): boolean {
+    return this.tokens.has(playerId);
   }
 
   /**
@@ -146,191 +111,248 @@ export class SocialStore {
    * both `id` and the matching `token` (rename / refresh — token echoed
    * back). An `id` with a wrong or missing token gets back the public
    * profile only, with no token and no rename applied — this is the gate
-   * that stops anyone who merely knows your id (e.g. a friend, since ids
-   * are visible in /friends and /activity) from acting as you.
+   * that stops anyone who merely knows your id (visible in /friends,
+   * /activity) from acting as you.
    */
-  register(
+  async register(
     name: string,
     id?: string,
     token?: string
-  ): { ok: true; player: PlayerProfile; token?: string } | { ok: false; reason: string } {
+  ): Promise<{ ok: true; player: PlayerProfile; token?: string } | { ok: false; reason: string }> {
     const clean = name.trim().slice(0, 24) || "Anonymous Spotter";
 
     if (id) {
-      const existing = this.players.get(id);
+      const [existing] = await sql<{ id: string; name: string; code: string; token: string }[]>`
+        select id, name, code, token from players where id = ${id}
+      `;
       if (existing) {
+        this.tokens.set(existing.id, existing.token);
         if (!token) {
           // No proof of ownership offered — hand back the public profile
           // only. Lets a stale/no-token client still see who it is without
           // being able to mutate anything or learn the secret token.
-          return { ok: true, player: this.profile(existing) };
+          return { ok: true, player: { id: existing.id, name: existing.name, code: existing.code } };
         }
-        if (token !== existing.token) {
-          return { ok: false, reason: "invalid token" };
-        }
+        if (token !== existing.token) return { ok: false, reason: "invalid token" };
         if (existing.name !== clean) {
-          existing.name = clean;
-          this.persist();
+          await sql`update players set name = ${clean} where id = ${id}`;
         }
-        return { ok: true, player: this.profile(existing), token: existing.token };
+        return {
+          ok: true,
+          player: { id: existing.id, name: clean, code: existing.code },
+          token: existing.token,
+        };
       }
-      // id given but unknown (e.g. server data was reset): create fresh
+      // id given but unknown (e.g. the database was reset): create fresh
       // under that id and issue a new token, same as first-run.
     }
 
-    const record: PlayerRecord = {
-      id: id ?? randomUUID(),
-      name: clean,
-      code: this.newCode(),
-      token: randomUUID(),
-      createdAt: Date.now(),
-      catches: [],
-      friendIds: [],
-    };
-    this.players.set(record.id, record);
-    this.byCode.set(record.code, record.id);
-    this.persist();
-    return { ok: true, player: this.profile(record), token: record.token };
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const code = attempt < 15 ? randomCode() : randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
+      try {
+        const [created] = id
+          ? await sql<{ id: string; name: string; code: string; token: string }[]>`
+              insert into players (id, name, code) values (${id}, ${clean}, ${code})
+              returning id, name, code, token
+            `
+          : await sql<{ id: string; name: string; code: string; token: string }[]>`
+              insert into players (name, code) values (${clean}, ${code})
+              returning id, name, code, token
+            `;
+        if (!created) continue;
+        this.tokens.set(created.id, created.token);
+        return {
+          ok: true,
+          player: { id: created.id, name: created.name, code: created.code },
+          token: created.token,
+        };
+      } catch (err) {
+        if ((err as { code?: string }).code === UNIQUE_VIOLATION) continue; // code collision — retry
+        throw err;
+      }
+    }
+    return { ok: false, reason: "could not allocate a unique spotter code" };
   }
 
-  /** True when `token` is the bearer secret for `playerId`. */
-  verifyToken(playerId: string, token: string | undefined): boolean {
-    if (!token) return false;
-    const player = this.players.get(playerId);
-    return player !== undefined && player.token === token;
+  async getProfile(id: string): Promise<PlayerProfile | undefined> {
+    const [row] = await sql<PlayerProfile[]>`select id, name, code from players where id = ${id}`;
+    return row;
   }
 
-  get(id: string): PlayerRecord | undefined {
-    return this.players.get(id);
-  }
-
-  getByCode(code: string): PlayerRecord | undefined {
-    const id = this.byCode.get(code.trim().toUpperCase());
-    return id ? this.players.get(id) : undefined;
-  }
-
-  profile(p: PlayerRecord): PlayerProfile {
-    return { id: p.id, name: p.name, code: p.code };
+  private async getByCode(code: string): Promise<PlayerProfile | undefined> {
+    const [row] = await sql<PlayerProfile[]>`
+      select id, name, code from players where code = ${code.trim().toUpperCase()}
+    `;
+    return row;
   }
 
   /**
    * Records a validated catch. Returns whether this player is the first ever
-   * to catch this airframe. Idempotent on the client-side catch id.
+   * to catch this airframe. Idempotent on the client-side catch id; the
+   * first-spotter flag is decided and enforced atomically in SQL so two
+   * players catching the same brand-new-to-Aloft aircraft in the same instant
+   * can't both win it.
    */
-  recordCatch(playerId: string, entry: Omit<SharedCatch, "firstSpotter">): { firstSpotter: boolean } {
-    const player = this.players.get(playerId);
-    if (!player) return { firstSpotter: false };
+  async recordCatch(
+    playerId: string,
+    entry: Omit<SharedCatch, "firstSpotter">
+  ): Promise<{ firstSpotter: boolean }> {
+    const caughtAt = new Date(entry.caughtAt);
+    const insertOnce = (firstSpotterExpr: ReturnType<typeof sql>) => sql<{ first_spotter: boolean }[]>`
+      insert into catches (id, player_id, hex, callsign, reg, type_icao, type_label, rarity, caught_at, alt_ft, distance_km, first_spotter)
+      values (${entry.id}, ${playerId}, ${entry.hex}, ${entry.callsign}, ${entry.reg ?? null}, ${entry.typeIcao ?? null},
+              ${entry.typeLabel}, ${entry.rarity}, ${caughtAt}, ${entry.altFt}, ${entry.distanceKm}, ${firstSpotterExpr})
+      on conflict (id) do nothing
+      returning first_spotter
+    `;
 
-    const already = player.catches.find((c) => c.id === entry.id);
-    if (already) return { firstSpotter: already.firstSpotter };
-
-    const hex = entry.hex.toLowerCase();
-    const firstSpotter = !this.firstSpots.has(hex);
-    if (firstSpotter) this.firstSpots.set(hex, playerId);
-
-    player.catches.push({ ...entry, firstSpotter });
-    // Keep the shared hangar bounded; the client keeps the full local history.
-    if (player.catches.length > 500) player.catches.shift();
-    this.persist();
-    return { firstSpotter };
+    try {
+      const inserted = await insertOnce(
+        sql`not exists (select 1 from catches where hex = ${entry.hex} and first_spotter)`
+      );
+      if (inserted[0]) return { firstSpotter: inserted[0].first_spotter };
+      const [existing] = await sql<{ first_spotter: boolean }[]>`
+        select first_spotter from catches where id = ${entry.id}
+      `;
+      return { firstSpotter: existing?.first_spotter ?? false };
+    } catch (err) {
+      const pgErr = err as { code?: string; constraint_name?: string };
+      if (pgErr.code === UNIQUE_VIOLATION && pgErr.constraint_name === "catches_first_spotter_unique") {
+        // Lost the first-spotter race to a concurrent catch of the same hex.
+        await insertOnce(sql`false`);
+        return { firstSpotter: false };
+      }
+      throw err;
+    }
   }
 
-  stats(player: PlayerRecord): PlayerStats {
-    const catches = player.catches;
-    const best = catches.reduce<string | null>(
-      (acc, c) => (acc === null || rarityIndex(c.rarity) > rarityIndex(acc) ? c.rarity : acc),
+  async stats(playerId: string): Promise<PlayerStats> {
+    const rows = await sql<
+      Array<{
+        rarity: string;
+        caught_at: Date;
+        alt_ft: number;
+        distance_km: string;
+        type_icao: string | null;
+        first_spotter: boolean;
+      }>
+    >`
+      select rarity, caught_at, alt_ft, distance_km, type_icao, first_spotter
+      from catches where player_id = ${playerId}
+      order by caught_at desc limit 500
+    `;
+    const catchLikes = rows.map((r) => ({
+      rarity: r.rarity as Rarity,
+      caughtAt: r.caught_at.getTime(),
+      altFt: r.alt_ft,
+      distanceKm: Number(r.distance_km),
+      typeIcao: r.type_icao ?? undefined,
+    }));
+    const best = rows.reduce<string | null>(
+      (acc, r) => (acc === null || rarityIndex(r.rarity) > rarityIndex(acc) ? r.rarity : acc),
       null
     );
     return {
-      catches: catches.length,
-      rarityScore: catches.reduce((sum, c) => sum + rarityPoints(c.rarity), 0),
-      streak: streakDays(catches, Date.now()),
-      badges: evaluateAchievements(catches).length,
+      catches: rows.length,
+      rarityScore: rows.reduce((sum, r) => sum + rarityPoints(r.rarity), 0),
+      streak: streakDays(catchLikes, Date.now()),
+      badges: evaluateAchievements(catchLikes).length,
       bestRarity: best as PlayerStats["bestRarity"],
-      lastCatchAt: catches.length ? Math.max(...catches.map((c) => c.caughtAt)) : null,
-      firstSpots: catches.filter((c) => c.firstSpotter).length,
+      lastCatchAt: rows.length ? Math.max(...rows.map((r) => r.caught_at.getTime())) : null,
+      firstSpots: rows.filter((r) => r.first_spotter).length,
     };
   }
 
   /** Mutual friendship — adding is symmetric, matching how players expect it. */
-  addFriendByCode(playerId: string, code: string): { ok: true; friend: FriendSummary } | { ok: false; reason: string } {
-    const player = this.players.get(playerId);
-    if (!player) return { ok: false, reason: "unknown player" };
-    const friend = this.getByCode(code);
+  async addFriendByCode(
+    playerId: string,
+    code: string
+  ): Promise<{ ok: true; friend: FriendSummary } | { ok: false; reason: string }> {
+    const friend = await this.getByCode(code);
     if (!friend) return { ok: false, reason: "no spotter with that code" };
-    if (friend.id === player.id) return { ok: false, reason: "that's your own code" };
+    if (friend.id === playerId) return { ok: false, reason: "that's your own code" };
 
-    if (!player.friendIds.includes(friend.id)) player.friendIds.push(friend.id);
-    if (!friend.friendIds.includes(player.id)) friend.friendIds.push(player.id);
-    this.persist();
-    return { ok: true, friend: { ...this.profile(friend), stats: this.stats(friend) } };
+    await sql.begin(async (tx) => {
+      await tx`insert into friendships (player_id, friend_id) values (${playerId}, ${friend.id}) on conflict do nothing`;
+      await tx`insert into friendships (player_id, friend_id) values (${friend.id}, ${playerId}) on conflict do nothing`;
+    });
+    return { ok: true, friend: { ...friend, stats: await this.stats(friend.id) } };
   }
 
-  removeFriend(playerId: string, friendId: string): void {
-    const player = this.players.get(playerId);
-    const friend = this.players.get(friendId);
-    if (player) player.friendIds = player.friendIds.filter((f) => f !== friendId);
-    if (friend) friend.friendIds = friend.friendIds.filter((f) => f !== playerId);
-    this.persist();
+  async removeFriend(playerId: string, friendId: string): Promise<void> {
+    await sql.begin(async (tx) => {
+      await tx`delete from friendships where player_id = ${playerId} and friend_id = ${friendId}`;
+      await tx`delete from friendships where player_id = ${friendId} and friend_id = ${playerId}`;
+    });
   }
 
-  friends(playerId: string): FriendSummary[] {
-    const player = this.players.get(playerId);
-    if (!player) return [];
-    return player.friendIds
-      .map((id) => this.players.get(id))
-      .filter((p): p is PlayerRecord => Boolean(p))
-      .map((p) => ({ ...this.profile(p), stats: this.stats(p) }))
-      .sort((a, b) => b.stats.rarityScore - a.stats.rarityScore);
+  async friends(playerId: string): Promise<FriendSummary[]> {
+    const rows = await sql<PlayerProfile[]>`
+      select p.id, p.name, p.code from friendships f
+      join players p on p.id = f.friend_id
+      where f.player_id = ${playerId}
+    `;
+    const withStats = await Promise.all(rows.map(async (p) => ({ ...p, stats: await this.stats(p.id) })));
+    return withStats.sort((a, b) => b.stats.rarityScore - a.stats.rarityScore);
   }
 
   /** A friend's hangar — visible only to confirmed friends (or yourself). */
-  hangarOf(viewerId: string, targetId: string): { ok: true; player: PlayerProfile; catches: SharedCatch[] } | { ok: false; reason: string } {
-    const viewer = this.players.get(viewerId);
-    const target = this.players.get(targetId);
-    if (!viewer || !target) return { ok: false, reason: "unknown player" };
-    if (viewer.id !== target.id && !viewer.friendIds.includes(target.id)) {
-      return { ok: false, reason: "add them as a friend to see their hangar" };
+  async hangarOf(
+    viewerId: string,
+    targetId: string
+  ): Promise<{ ok: true; player: PlayerProfile; catches: SharedCatch[] } | { ok: false; reason: string }> {
+    const target = await this.getProfile(targetId);
+    if (!target) return { ok: false, reason: "unknown player" };
+    if (viewerId !== targetId) {
+      const [isFriend] = await sql`
+        select 1 from friendships where player_id = ${viewerId} and friend_id = ${targetId}
+      `;
+      if (!isFriend) return { ok: false, reason: "add them as a friend to see their hangar" };
     }
-    return {
-      ok: true,
-      player: this.profile(target),
-      catches: [...target.catches].sort((a, b) => b.caughtAt - a.caughtAt).slice(0, 100),
-    };
+    const rows = await sql<CatchRow[]>`
+      select * from catches where player_id = ${targetId} order by caught_at desc limit 100
+    `;
+    return { ok: true, player: target, catches: rows.map(rowToSharedCatch) };
   }
 
   /** Weekly leaderboard among you and your friends. */
-  leaderboard(playerId: string, sinceMs: number): LeaderboardRow[] {
-    const player = this.players.get(playerId);
-    if (!player) return [];
-    const pool = [player, ...player.friendIds.map((id) => this.players.get(id)).filter((p): p is PlayerRecord => Boolean(p))];
-    return pool
-      .map((p) => {
-        const recent = p.catches.filter((c) => c.caughtAt >= sinceMs);
+  async leaderboard(playerId: string, sinceMs: number): Promise<LeaderboardRow[]> {
+    const pool = await sql<PlayerProfile[]>`
+      select id, name, code from players where id = ${playerId}
+      union
+      select p.id, p.name, p.code from friendships f join players p on p.id = f.friend_id where f.player_id = ${playerId}
+    `;
+    const since = new Date(sinceMs);
+    const rows = await Promise.all(
+      pool.map(async (p) => {
+        const recent = await sql<{ rarity: string }[]>`
+          select rarity from catches where player_id = ${p.id} and caught_at >= ${since}
+        `;
         return {
-          ...this.profile(p),
+          ...p,
           catches: recent.length,
-          rarityScore: recent.reduce((sum, c) => sum + rarityPoints(c.rarity), 0),
-          isYou: p.id === player.id,
+          rarityScore: recent.reduce((sum, r) => sum + rarityPoints(r.rarity), 0),
+          isYou: p.id === playerId,
         };
       })
-      .sort((a, b) => b.rarityScore - a.rarityScore || b.catches - a.catches);
+    );
+    return rows.sort((a, b) => b.rarityScore - a.rarityScore || b.catches - a.catches);
   }
 
   /** Recent notable catches by friends — the "Maya caught a Legendary" feed. */
-  activity(playerId: string, limit = 20): ActivityItem[] {
-    const player = this.players.get(playerId);
-    if (!player) return [];
-    const items: ActivityItem[] = [];
-    for (const friendId of player.friendIds) {
-      const friend = this.players.get(friendId);
-      if (!friend) continue;
-      for (const c of friend.catches) {
-        if (c.firstSpotter || RARITY_ORDER.indexOf(c.rarity) >= RARITY_ORDER.indexOf("rare")) {
-          items.push({ player: this.profile(friend), catch: c });
-        }
-      }
-    }
-    return items.sort((a, b) => b.catch.caughtAt - a.catch.caughtAt).slice(0, limit);
+  async activity(playerId: string, limit = 20): Promise<ActivityItem[]> {
+    const rows = await sql<Array<CatchRow & { player_id: string; player_name: string; player_code: string }>>`
+      select c.*, p.id as player_id, p.name as player_name, p.code as player_code
+      from friendships f
+      join players p on p.id = f.friend_id
+      join catches c on c.player_id = f.friend_id
+      where f.player_id = ${playerId} and (c.first_spotter or c.rarity in ('rare','epic','legendary'))
+      order by c.caught_at desc
+      limit ${limit}
+    `;
+    return rows.map((r) => ({
+      player: { id: r.player_id, name: r.player_name, code: r.player_code },
+      catch: rowToSharedCatch(r),
+    }));
   }
 }
