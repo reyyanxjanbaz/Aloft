@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   MAX_VIEW_RADIUS_KM,
   MIN_VIEW_RADIUS_KM,
+  normalizeBaseUrl,
   type AircraftState,
   type ServerMessage,
 } from "@aloft/shared";
@@ -26,7 +27,13 @@ export const usePlanes = create<PlanesState>((set) => ({
   select: (hex) => set({ selectedHex: hex }),
 }));
 
-export const SKY_URL = (import.meta.env.VITE_SKY_URL as string | undefined) ?? "http://localhost:8787";
+/**
+ * Base URL of the sky service, always without a trailing slash — every caller
+ * appends a rooted path (`/ws`, `/catch`, `/player/register`).
+ */
+export const SKY_URL = normalizeBaseUrl(
+  (import.meta.env.VITE_SKY_URL as string | undefined) ?? "http://localhost:8787"
+);
 
 interface View {
   lat: number;
