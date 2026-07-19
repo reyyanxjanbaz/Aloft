@@ -39,7 +39,7 @@ function compassWord(bearing: number): string {
 export function startGeofence(provider: FlightProvider, store: PushStore): void {
   const tick = async () => {
     const now = Date.now();
-    for (const sub of store.all()) {
+    for (const sub of await store.all()) {
       if (now - sub.lastPingAt < PER_SUB_COOLDOWN_MS) continue;
       try {
         const aircraft = await provider.getAircraftNear(sub.lat, sub.lon, sub.radiusKm / NM_TO_KM);
@@ -69,13 +69,11 @@ export function startGeofence(provider: FlightProvider, store: PushStore): void 
         try {
           await webpush.sendNotification(sub.subscription, payload, { TTL: 300 });
           console.log(`[push] pinged ${sub.subscription.endpoint.slice(0, 40)}… about ${typeName(best.typeIcao)} (${rarity})`);
-          sub.lastPingAt = now;
-          sub.pingedHexes[best.hex] = now;
-          store.persist();
+          await store.markPinged(sub.subscription.endpoint, best.hex, now);
         } catch (err) {
           const status = (err as { statusCode?: number }).statusCode;
           if (status === 404 || status === 410) {
-            store.remove(sub.subscription.endpoint);
+            await store.remove(sub.subscription.endpoint);
             console.log("[push] removed dead subscription");
           } else {
             console.warn("[push] send failed, will retry next tick:", status ?? err);

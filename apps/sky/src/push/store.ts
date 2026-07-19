@@ -1,8 +1,5 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { PushSubscription } from "web-push";
+import { sql } from "../db";
 
 export interface StoredSub {
   subscription: PushSubscription;
@@ -15,73 +12,73 @@ export interface StoredSub {
   pingedHexes: Record<string, number>;
 }
 
-const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "data");
-const SUBS_FILE = join(DATA_DIR, "push-subs.json");
+interface SubRow {
+  endpoint: string;
+  keys: PushSubscription["keys"];
+  lat: number;
+  lon: number;
+  radius_km: number;
+  last_ping_at: Date | null;
+  pinged_hexes: Record<string, number> | null;
+}
 
-/** File-backed subscription store — MVP stand-in for Postgres. */
+function rowToStoredSub(r: SubRow): StoredSub {
+  return {
+    subscription: { endpoint: r.endpoint, keys: r.keys } as PushSubscription,
+    lat: r.lat,
+    lon: r.lon,
+    radiusKm: r.radius_km,
+    lastPingAt: r.last_ping_at ? r.last_ping_at.getTime() : 0,
+    pingedHexes: r.pinged_hexes ?? {},
+  };
+}
+
+/** Postgres-backed push subscription store. */
 export class PushStore {
-  private subs = new Map<string, StoredSub>();
-
-  constructor() {
-    if (existsSync(SUBS_FILE)) {
-      try {
-        const list = JSON.parse(readFileSync(SUBS_FILE, "utf8")) as StoredSub[];
-        for (const s of list) this.subs.set(s.subscription.endpoint, s);
-      } catch {
-        console.warn("[push] could not parse push-subs.json — starting empty");
-      }
-    }
+  /**
+   * Upserting must not clear ping history — a client re-subscribing from a
+   * new location would otherwise reset its cooldown and get spammed.
+   */
+  async upsert(sub: Omit<StoredSub, "lastPingAt" | "pingedHexes">): Promise<void> {
+    await sql`
+      insert into push_subscriptions (endpoint, keys, lat, lon, radius_km)
+      values (${sub.subscription.endpoint}, ${sql.json(sub.subscription.keys as never)},
+              ${sub.lat}, ${sub.lon}, ${Math.round(sub.radiusKm)})
+      on conflict (endpoint) do update
+        set keys = excluded.keys, lat = excluded.lat, lon = excluded.lon, radius_km = excluded.radius_km
+    `;
   }
 
-  upsert(sub: Omit<StoredSub, "lastPingAt" | "pingedHexes">): void {
-    const existing = this.subs.get(sub.subscription.endpoint);
-    this.subs.set(sub.subscription.endpoint, {
-      ...sub,
-      lastPingAt: existing?.lastPingAt ?? 0,
-      pingedHexes: existing?.pingedHexes ?? {},
-    });
-    this.persist();
+  async remove(endpoint: string): Promise<void> {
+    await sql`delete from push_subscriptions where endpoint = ${endpoint}`;
   }
 
-  remove(endpoint: string): void {
-    if (this.subs.delete(endpoint)) this.persist();
+  async all(): Promise<StoredSub[]> {
+    const rows = await sql<SubRow[]>`
+      select endpoint, keys, lat, lon, radius_km, last_ping_at, pinged_hexes from push_subscriptions
+    `;
+    return rows.map(rowToStoredSub);
   }
 
-  all(): StoredSub[] {
-    return [...this.subs.values()];
+  async count(): Promise<number> {
+    const [row] = await sql<{ n: string }[]>`select count(*) as n from push_subscriptions`;
+    return Number(row?.n ?? 0);
   }
 
-  get size(): number {
-    return this.subs.size;
-  }
-
-  private persistTimer: NodeJS.Timeout | null = null;
-
-  /** Debounced async rewrite — see SocialStore.persist for why. */
-  persist(): void {
-    if (this.persistTimer) return;
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = null;
-      void this.writeNow();
-    }, 250);
-    this.persistTimer.unref?.();
-  }
-
-  private async writeNow(): Promise<void> {
-    mkdirSync(DATA_DIR, { recursive: true });
-    try {
-      await writeFile(SUBS_FILE, JSON.stringify(this.all(), null, 2));
-    } catch (err) {
-      console.error("[push] failed to persist subscriptions — will retry on next change:", err);
-    }
-  }
-
-  /** Bypasses the debounce and writes immediately — call before process exit. */
-  async flush(): Promise<void> {
-    if (this.persistTimer) {
-      clearTimeout(this.persistTimer);
-      this.persistTimer = null;
-    }
-    await this.writeNow();
+  /**
+   * Spends the cooldown and dedupe budget for one delivered ping. Called
+   * only after the push actually goes out, so a transient send failure
+   * doesn't silently cost the player their next eligible window.
+   *
+   * `||` merges into the existing jsonb object rather than replacing it, so
+   * per-airframe dedupe history accumulates across pings.
+   */
+  async markPinged(endpoint: string, hex: string, at: number): Promise<void> {
+    await sql`
+      update push_subscriptions
+      set last_ping_at = ${new Date(at)},
+          pinged_hexes = coalesce(pinged_hexes, '{}'::jsonb) || ${sql.json({ [hex]: at })}
+      where endpoint = ${endpoint}
+    `;
   }
 }
