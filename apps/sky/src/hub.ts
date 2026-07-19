@@ -104,14 +104,27 @@ export class SkyHub {
    * own broadcast position (which it already receives over the live feed)
    * without the player needing to be anywhere near it.
    */
-  validateCatch(
+  async validateCatch(
     hex: string,
     lat: number,
     lon: number,
     ts: number,
     claimingPlayerId?: string
-  ): CatchResponse {
-    const entry = this.history.get(hex.toLowerCase());
+  ): Promise<CatchResponse> {
+    let entry = this.history.get(hex.toLowerCase());
+    if (!entry) {
+      // Every deploy starts a fresh instance with an empty history, which
+      // would reject legitimate catches until the first poll of that cell
+      // lands. Poll the claimed position once so a catch made seconds after
+      // a restart still counts.
+      try {
+        const aircraft = await this.provider.getAircraftNear(lat, lon, MAX_VIEW_RADIUS_KM / NM_TO_KM);
+        this.recordHistory(aircraft);
+        entry = this.history.get(hex.toLowerCase());
+      } catch (err) {
+        console.warn("[hub] on-demand poll for catch validation failed:", err);
+      }
+    }
     if (!entry) return { ok: false, reason: "unknown aircraft — not seen on this radar" };
 
     const now = Date.now();

@@ -131,7 +131,7 @@ app.post<{ Body: CatchRequest }>("/catch", async (req, reply) => {
     return reply.code(401).send({ ok: false, reason: "invalid or missing player token" });
   }
 
-  const result = hub.validateCatch(hex, lat, lon, ts, playerId);
+  const result = await hub.validateCatch(hex, lat, lon, ts, playerId);
   if (!result.ok) return reply.code(422).send(result);
 
   // Record it against the player so friends' hangars and first-spotter work.
