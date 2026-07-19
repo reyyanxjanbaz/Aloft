@@ -229,3 +229,76 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ── Inbound board ────────────────────────────────────── */
+
+/*
+ * A strip departure board, bottom-left of the scope: what is about to be
+ * capturable, soonest first. Deliberately quiet — it sits over the map, so
+ * it reads as an instrument annotation rather than a panel competing with
+ * the contact card, which owns the bottom of the screen.
+ */
+.inbound {
+  position: absolute;
+  left: var(--s-3);
+  bottom: var(--s-3);
+  z-index: 5;
+  width: min(300px, calc(100% - var(--s-3) * 2));
+  padding: var(--s-2) var(--s-3) var(--s-3);
+  background: color-mix(in srgb, var(--void) 88%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  pointer-events: auto;
+}
+
+.inbound__title {
+  display: block;
+  padding-bottom: var(--s-2);
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+
+.inbound__list {
+  list-style: none;
+}
+
+.inbound__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-2) 0 var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  /* The rarity tick is the only colour in the row. */
+  border-left: 2px solid var(--rarity);
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.inbound__list li:last-child .inbound__row {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.inbound__row:hover {
+  background: var(--deck);
+}
+
+.inbound__type {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--t-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbound__eta {
+  color: var(--phos);
+  font-size: var(--t-data-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.inbound__look {
+  color: var(--ink-3);
+}

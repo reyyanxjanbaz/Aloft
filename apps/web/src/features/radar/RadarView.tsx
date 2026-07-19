@@ -5,12 +5,14 @@ import type { PlayerPosition } from "../../lib/useGeolocation";
 import { serverNow, usePlanes } from "../../state/planes";
 import { IconPin, IconTower } from "../../ui/icons";
 import { ContactCard } from "./ContactCard";
+import { InboundBoard } from "./InboundBoard";
 import { RadarMap } from "./RadarMap";
 import "./radar.css";
 
 export function RadarView({ position }: { position: PlayerPosition }) {
   const link = usePlanes((s) => s.link);
   const planes = usePlanes((s) => s.planes);
+  const selectedHex = usePlanes((s) => s.selectedHex);
   const [recenter, setRecenter] = useState(0);
 
   // Projected, exactly as the map and the contact card measure it — a raw
@@ -61,6 +63,12 @@ export function RadarView({ position }: { position: PlayerPosition }) {
         <div className="scope__empty panel">
           <p>No contacts in view. Pinch out to widen the scope.</p>
         </div>
+      )}
+
+      {/* Hidden while a contact card is open — that card owns the bottom of
+          the screen, and two stacked panels would bury the map. */}
+      {!selectedHex && (
+        <InboundBoard position={position} onSelect={(hex) => usePlanes.getState().select(hex)} />
       )}
 
       <ContactCard position={position} />
