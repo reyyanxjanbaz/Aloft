@@ -13,9 +13,13 @@
     "dev:web": "npm run dev --workspace apps/web",
     "build": "npm run build --workspace apps/web",
     "test": "npm run test --workspace packages/shared",
-    "gen:icons": "node scripts/gen-icons.mjs"
+    "gen:icons": "node scripts/gen-icons.mjs",
+    "db:schema": "node scripts/apply-schema.mjs"
   },
   "devDependencies": {
     "npm-run-all": "^4.1.5"
+  },
+  "dependencies": {
+    "postgres": "^3.4.9"
   }
 }
