@@ -7,7 +7,7 @@ import { RevealView } from "./features/reveal/RevealView";
 import { SocialView } from "./features/social/SocialView";
 import { SystemView } from "./features/system/SystemView";
 import { flushPendingCatch } from "./lib/catchQueue";
-import { ensurePlayer } from "./lib/player";
+import { usePlayer } from "./state/player";
 import { useGeolocation, type PlayerPosition } from "./lib/useGeolocation";
 import { isTab, useApp } from "./state/app";
 import { connectSky, disconnectSky, setGpsPosition, setSkyIdentity, usePlanes } from "./state/planes";
@@ -26,7 +26,7 @@ export function App() {
   const [confirmed, setConfirmed] = useState(false);
 
   useEffect(() => {
-    void ensurePlayer().then((p) => setSkyIdentity(p?.id, p?.token));
+    void usePlayer.getState().refresh().then((p) => setSkyIdentity(p?.id, p?.token));
   }, []);
 
   // Open the feed once a position is first known, then re-aim the *same*

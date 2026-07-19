@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements, RARITY_ORDER, streakDays } from "@aloft/shared";
 import { AchievementIcon } from "../../ui/AchievementIcon";
@@ -15,18 +15,40 @@ export function HangarView() {
   const [entries, setEntries] = useState<HangarEntry[] | null>(null);
   const [selected, setSelected] = useState<HangarEntry | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [unreadable, setUnreadable] = useState(false);
 
   useEffect(() => {
-    void listCatches().then(setEntries);
+    // Without this catch, a storage failure (private mode, a blocked upgrade,
+    // a corrupt database) left entries null forever and the hangar rendered
+    // "Nothing logged yet" — telling a player with a full collection that
+    // they had caught nothing.
+    void listCatches()
+      .then(setEntries)
+      .catch((err) => {
+        console.error("[hangar] could not read the local hangar:", err);
+        setUnreadable(true);
+      });
   }, []);
 
   const all = entries ?? [];
-  const points = all.reduce((sum, e) => sum + (RARITY_ORDER.indexOf(e.rarity) + 1) ** 2, 0);
-  const streak = streakDays(all, Date.now());
-  const earned = new Set(evaluateAchievements(all));
-  const shown = filter === "rare"
-    ? all.filter((e) => RARITY_ORDER.indexOf(e.rarity) >= RARITY_ORDER.indexOf("rare"))
-    : all;
+  // Recomputed only when the collection changes: evaluateAchievements and
+  // streakDays walk every catch, and this used to run on every render —
+  // including each filter toggle and every viewer open.
+  const { points, streak, earned } = useMemo(
+    () => ({
+      points: all.reduce((sum, e) => sum + (RARITY_ORDER.indexOf(e.rarity) + 1) ** 2, 0),
+      streak: streakDays(all, Date.now()),
+      earned: new Set(evaluateAchievements(all)),
+    }),
+    [entries]
+  );
+  const shown = useMemo(
+    () =>
+      filter === "rare"
+        ? all.filter((e) => RARITY_ORDER.indexOf(e.rarity) >= RARITY_ORDER.indexOf("rare"))
+        : all,
+    [entries, filter]
+  );
 
   return (
     <div className="screen hangar">
@@ -47,7 +69,15 @@ export function HangarView() {
         <Total label="Badges" value={`${earned.size}/${ACHIEVEMENTS.length}`} />
       </dl>
 
-      {all.length === 0 ? (
+      {unreadable ? (
+        <p className="empty">
+          This device&apos;s hangar store could not be opened.
+          <br />
+          Your catches are safe — reload to try again.
+        </p>
+      ) : entries === null ? (
+        <p className="empty">Opening the hangar…</p>
+      ) : all.length === 0 ? (
         <p className="empty">
           Nothing logged yet.
           <br />

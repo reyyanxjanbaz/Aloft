@@ -6,7 +6,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
+      // "prompt", not "autoUpdate": the page asks before swapping. See sw.ts
+      // — silently activating a new worker mid-session left installed PWAs
+      // running the previous build and could 404 lazily-loaded chunks.
+      registerType: "prompt",
       strategies: "injectManifest",
       srcDir: "src",
       filename: "sw.ts",

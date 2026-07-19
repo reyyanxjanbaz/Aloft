@@ -10,9 +10,25 @@ import "./styles/base.css";
 import "./styles/ui.css";
 import "./styles/boot.css";
 import { App } from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { UpdateToast } from "./components/UpdateToast";
+
+/** Last line of defence: a render crash shows a readout, not a blank screen. */
+const FAULT = (
+  <div className="boot">
+    <div className="boot__mark">Aloft</div>
+    <p className="boot__line boot__line--warn">System fault</p>
+    <p className="boot__help">
+      Something in the instrument panel failed. Reload to bring the scope back up.
+    </p>
+  </div>
+);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary label="app" fallback={FAULT}>
+      <App />
+    </ErrorBoundary>
+    <UpdateToast />
   </StrictMode>
 );

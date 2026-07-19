@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CAPTURE_RADIUS_KM } from "@aloft/shared";
 import { isMuted, primeAudio, setMuted } from "../../lib/feedback";
 import { platformName } from "../../lib/platform";
-import { enableSkyPings, pushPermission } from "../../lib/push";
+import { disableSkyPings, enableSkyPings, PushError, skyPingsState } from "../../lib/push";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { listAttributions, type ModelEntry } from "../reveal/modelRegistry";
 import { IconBell, IconCheck, IconInstall, IconMuted, IconSound } from "../../ui/icons";
@@ -18,15 +18,25 @@ function isStandalone(): boolean {
 /** Settings, install guidance, and the attribution the data licences require. */
 export function SystemView({ position }: { position: PlayerPosition }) {
   const [muted, setMutedState] = useState(isMuted());
-  const [pings, setPings] = useState<"idle" | "busy" | "on" | "failed">(
-    pushPermission() === "granted" ? "on" : "idle"
-  );
+  const [pings, setPings] = useState<"idle" | "busy" | "on" | "failed" | "blocked">("idle");
   const [models, setModels] = useState<Array<ModelEntry & { key: string }>>([]);
   const installed = isStandalone();
   const ios = platformName() === "ios" || /iPhone|iPad|iPod/.test(navigator.userAgent);
 
   useEffect(() => {
     void listAttributions().then(setModels);
+  }, []);
+
+  // Read the real subscription rather than assuming permission means armed.
+  useEffect(() => {
+    let alive = true;
+    void skyPingsState().then((state) => {
+      if (!alive) return;
+      setPings(state === "on" ? "on" : state === "blocked" ? "blocked" : "idle");
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   return (
@@ -62,18 +72,29 @@ export function SystemView({ position }: { position: PlayerPosition }) {
             <span>Notify me when a rare aircraft enters {CAPTURE_RADIUS_KM} km</span>
           </div>
           {pings === "on" ? (
-            <span className="sys__on">
-              <IconCheck size={14} weight="bold" /> On
-            </span>
+            <button
+              className="btn btn--quiet"
+              disabled={pings !== "on"}
+              onClick={() => {
+                setPings("busy");
+                void disableSkyPings()
+                  .then(() => setPings("idle"))
+                  .catch(() => setPings("idle"));
+              }}
+            >
+              <IconCheck size={14} weight="bold" /> On — turn off
+            </button>
           ) : (
             <button
               className="btn"
-              disabled={pings === "busy"}
+              disabled={pings === "busy" || pings === "blocked"}
               onClick={() => {
                 setPings("busy");
                 enableSkyPings(position.lat, position.lon)
                   .then(() => setPings("on"))
-                  .catch(() => setPings("failed"));
+                  .catch((err: unknown) =>
+                    setPings(err instanceof PushError && err.kind === "denied" ? "blocked" : "failed")
+                  );
               }}
             >
               <IconBell size={16} />
@@ -81,9 +102,16 @@ export function SystemView({ position }: { position: PlayerPosition }) {
             </button>
           )}
         </div>
-        {pings === "failed" && (
+        {/* A tower outage and a browser block are different problems and need
+            different instructions — both used to read as "blocked". */}
+        {pings === "blocked" && (
           <p className="note note--warn">
             Notifications are blocked. Allow them in your browser settings, then try again.
+          </p>
+        )}
+        {pings === "failed" && (
+          <p className="note note--warn">
+            The tower is unreachable — alerts could not be armed. Try again shortly.
           </p>
         )}
       </section>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import type { ActivityItem, FriendSummary, LeaderboardRow, PlayerProfile, SharedCatch } from "@aloft/shared";
 import { share } from "../../lib/platform";
-import { cachedPlayer, renamePlayer } from "../../lib/player";
+import { usePlayer } from "../../state/player";
 import { IconAdd, IconBack, IconRemove, IconShare, IconStar, IconStreak } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
 import { AircraftGlyph } from "../hangar/AircraftGlyph";
@@ -34,7 +34,12 @@ function timeAgo(ts: number): string {
 }
 
 export function SocialView() {
-  const [player, setPlayer] = useState<PlayerProfile | null>(cachedPlayer());
+  // Subscribed, not snapshotted: on a fresh install registration is still in
+  // flight when this mounts, and a one-off read left the profile blank and
+  // dropped any ?invite= code for the rest of the session.
+  const player = usePlayer((s) => s.player);
+  const auth = usePlayer((s) => s.auth);
+  const startFresh = usePlayer((s) => s.startFresh);
   const [tab, setTab] = useState<Tab>("friends");
   const [friends, setFriends] = useState<FriendSummary[]>([]);
   const [board, setBoard] = useState<LeaderboardRow[]>([]);
@@ -162,9 +167,7 @@ export function SocialView() {
               maxLength={24}
               onBlur={(e) => {
                 const next = e.target.value.trim();
-                if (next && next !== player.name) {
-                  void renamePlayer(next).then((p) => p && setPlayer(p));
-                }
+                if (next && next !== player.name) void usePlayer.getState().rename(next);
               }}
             />
           </div>
@@ -208,7 +211,19 @@ export function SocialView() {
       </div>
 
       {message && <p className="note note--ok">{message}</p>}
-      {offline && <p className="note note--warn">No link to the tower — spotters are offline.</p>}
+      {/* An identity the tower rejects is not the same as being offline, and
+          it needs an action rather than a shrug — previously both showed the
+          same "offline" line and the device could never recover. */}
+      {auth === "auth-failed" ? (
+        <div className="note note--warn note--action">
+          <span>This device&apos;s identity check failed, so spotters are read-blocked.</span>
+          <button className="btn btn--quiet" onClick={() => void startFresh()}>
+            Start a fresh identity
+          </button>
+        </div>
+      ) : (
+        offline && <p className="note note--warn">No link to the tower — spotters are offline.</p>
+      )}
 
       <div className="tabs" role="tablist">
         {TABS.map((t) => (

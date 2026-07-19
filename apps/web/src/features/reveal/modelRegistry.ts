@@ -25,14 +25,18 @@ let manifestPromise: Promise<Manifest | null> | null = null;
 function loadManifest(): Promise<Manifest | null> {
   if (!manifestPromise) {
     manifestPromise = fetch("/models/manifest.json")
-      .then((res) => (res.ok ? (res.json() as Promise<Manifest>) : null))
-      .catch(() => null)
-      .then((result) => {
-        // A failed fetch isn't a permanent fact ("no manifest exists") — clear
-        // the cache on failure so the next resolveModel()/listAttributions()
-        // call retries instead of using the procedural fallback all session.
-        if (result === null) manifestPromise = null;
-        return result;
+      .then((res) => {
+        // A 404 is a permanent answer — this deployment ships no manifest —
+        // so cache it. Retrying meant every reveal and every credits screen
+        // re-requested a file that will never exist.
+        if (!res.ok) return null;
+        return res.json() as Promise<Manifest>;
+      })
+      .catch(() => {
+        // A network error, by contrast, may well succeed later: clear the
+        // cache so the next call retries rather than falling back all session.
+        manifestPromise = null;
+        return null;
       });
   }
   return manifestPromise;

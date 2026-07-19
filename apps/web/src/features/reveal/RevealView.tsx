@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements } from "@aloft/shared";
 import { lookupRoute, type FlightRoute } from "../../lib/adsbdb";
 import { sfxAchievement, sfxReveal } from "../../lib/feedback";
-import { enableSkyPings, pushPermission } from "../../lib/push";
+import { enableSkyPings, PushError, skyPingsState } from "../../lib/push";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { useApp } from "../../state/app";
 import { AchievementIcon } from "../../ui/AchievementIcon";
@@ -32,9 +32,19 @@ export function RevealView({
   const go = useApp((s) => s.go);
   const [route, setRoute] = useState<FlightRoute | null>(null);
   const [unlocked, setUnlocked] = useState<string[]>([]);
-  const [pings, setPings] = useState<"idle" | "busy" | "on" | "failed">(
-    pushPermission() === "granted" ? "on" : "idle"
-  );
+  // From the real subscription, not from Notification.permission — permission
+  // granted once at another location does not mean alerts are armed here.
+  const [pings, setPings] = useState<"idle" | "busy" | "on" | "failed" | "blocked">("idle");
+
+  useEffect(() => {
+    let alive = true;
+    void skyPingsState().then((state) => {
+      if (alive) setPings(state === "on" ? "on" : state === "blocked" ? "blocked" : "idle");
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (entry.callsign) void lookupRoute(entry.callsign).then(setRoute);
@@ -46,22 +56,36 @@ export function RevealView({
 
   useEffect(() => {
     let cancelled = false;
+    let chime: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
-      const [catches, seen] = await Promise.all([listCatches(), getSeenAchievements()]);
-      const fresh = evaluateAchievements(catches).filter((id) => !seen.has(id));
-      if (cancelled || fresh.length === 0) return;
-      setUnlocked(fresh);
-      setTimeout(sfxAchievement, 900);
-      await setSeenAchievements(new Set([...seen, ...fresh]));
+      try {
+        const [catches, seen] = await Promise.all([listCatches(), getSeenAchievements()]);
+        const fresh = evaluateAchievements(catches).filter((id) => !seen.has(id));
+        if (cancelled || fresh.length === 0) return;
+        setUnlocked(fresh);
+        chime = setTimeout(sfxAchievement, 900);
+        // If this write fails the same badges re-award on the next reveal —
+        // cosmetic, and far better than an unhandled rejection here.
+        await setSeenAchievements(new Set([...seen, ...fresh]));
+      } catch (err) {
+        console.warn("[reveal] achievement bookkeeping failed:", err);
+      }
     })();
     return () => {
       cancelled = true;
+      // Otherwise the chime still fires after the player has already tapped
+      // through to the hangar or back to the scope.
+      if (chime) clearTimeout(chime);
     };
   }, [entry.id]);
 
   const freshDefs = ACHIEVEMENTS.filter((a) => unlocked.includes(a.id));
-  // Offer alerts at the moment of a first catch — peak motivation, once only.
-  const offerPings = isNew && pings !== "on" && pushPermission() === "default";
+  // Offer alerts at the moment of a first catch — peak motivation. Offered
+  // whenever there is genuinely no subscription, including the case where
+  // permission was granted long ago somewhere else and has since lapsed.
+  // "busy" keeps the button mounted (disabled) while the request is in
+  // flight rather than having it vanish mid-tap.
+  const offerPings = isNew && (pings === "idle" || pings === "busy");
 
   return (
     <div className="reveal" style={{ ["--rarity" as string]: `var(--rarity-${entry.rarity})` }}>
@@ -159,7 +183,9 @@ export function RevealView({
               setPings("busy");
               enableSkyPings(position.lat, position.lon)
                 .then(() => setPings("on"))
-                .catch(() => setPings("failed"));
+                .catch((err: unknown) =>
+                  setPings(err instanceof PushError && err.kind === "denied" ? "blocked" : "failed")
+                );
             }}
           >
             <IconBell size={16} />
@@ -171,9 +197,14 @@ export function RevealView({
             <IconCheck size={14} weight="bold" /> Sky alerts are on for this spot
           </p>
         )}
-        {pings === "failed" && (
+        {pings === "blocked" && (
           <p className="reveal__note reveal__note--warn">
             Alerts are blocked in your browser settings.
+          </p>
+        )}
+        {pings === "failed" && (
+          <p className="reveal__note reveal__note--warn">
+            The tower is unreachable — alerts could not be armed.
           </p>
         )}
 

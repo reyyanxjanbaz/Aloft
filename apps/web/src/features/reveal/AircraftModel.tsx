@@ -2,6 +2,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import type { Group, Material, Mesh } from "three";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { Airframe } from "./Airframe";
 import { accentColor } from "./liveries";
 import { resolveModel, type ResolvedModel } from "./modelRegistry";
@@ -21,6 +22,9 @@ function GltfModel({ resolved, callsign }: { resolved: ResolvedModel; callsign: 
 
   useEffect(() => {
     const color = accentColor(callsign);
+    // Every material cloned here belongs to this instance alone, so nothing
+    // else will ever free it — without this list each reveal leaked one.
+    const owned: Material[] = [];
     instance.traverse((obj) => {
       const mesh = obj as Mesh;
       if (!mesh.isMesh) return;
@@ -33,11 +37,17 @@ function GltfModel({ resolved, callsign }: { resolved: ResolvedModel; callsign: 
         // materials by reference (to avoid duplicating GPU resources when
         // no per-instance change is needed) — the accent material is still
         // the one shared object every clone points at unless cloned too.
-        const owned = material.clone() as typeof material;
-        owned.color?.set(color);
-        mesh.material = owned;
+        const paint = material.clone() as typeof material;
+        paint.color?.set(color);
+        mesh.material = paint;
+        owned.push(paint);
       }
     });
+    return () => {
+      // Geometries and the source materials stay in the useGLTF cache for the
+      // next reveal of this type; only these per-instance clones are ours.
+      for (const material of owned) material.dispose();
+    };
   }, [instance, callsign]);
 
   return (
@@ -69,9 +79,18 @@ export function AircraftModel({ typeIcao, callsign }: { typeIcao?: string; calls
     return <Airframe typeIcao={typeIcao} callsign={callsign} />;
   }
 
+  // Suspense covers the loading promise; the boundary covers it rejecting.
+  // A missing or corrupt GLB should cost this aircraft its detailed model,
+  // not white-screen the app on the reveal that follows a catch.
   return (
-    <Suspense fallback={<Airframe typeIcao={typeIcao} callsign={callsign} />}>
-      <GltfModel resolved={resolved} callsign={callsign} />
-    </Suspense>
+    <ErrorBoundary
+      label="model"
+      resetKey={resolved.url}
+      fallback={<Airframe typeIcao={typeIcao} callsign={callsign} />}
+    >
+      <Suspense fallback={<Airframe typeIcao={typeIcao} callsign={callsign} />}>
+        <GltfModel resolved={resolved} callsign={callsign} />
+      </Suspense>
+    </ErrorBoundary>
   );
 }

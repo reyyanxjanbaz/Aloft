@@ -24,6 +24,7 @@ export {
   Info as IconInfo,
   Bell as IconBell,
   ShareNetwork as IconShare,
+  ArrowsClockwise as IconRefresh,
   Copy as IconCopy,
   SpeakerHigh as IconSound,
   SpeakerSlash as IconMuted,

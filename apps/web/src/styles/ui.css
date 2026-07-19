@@ -232,7 +232,7 @@
   gap: var(--s-2);
   max-width: min(92vw, 420px);
   padding: var(--s-2) var(--s-4);
-  background: var(--panel);
+  background: var(--deck-2);
   border: 1px solid var(--phos);
   border-radius: var(--r-sm);
   color: var(--ink);
@@ -258,4 +258,52 @@
     0%, 92% { opacity: 1; }
     100% { opacity: 0; }
   }
+}
+
+/* Toast with an action — same surface, room for a control. */
+.toast--action {
+  gap: var(--s-4);
+  padding-right: var(--s-2);
+}
+
+.toast__action {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--phos);
+  border-radius: var(--r-sm);
+  color: var(--phos);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.toast__action:hover:not(:disabled) {
+  background: var(--phos-dim);
+}
+
+.toast__action:disabled {
+  opacity: 0.5;
+}
+
+/* An offer to reload must not expire on its own. */
+.toast--action {
+  animation: toast-in var(--dur) var(--ease) forwards;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* A warning that carries a recovery action, not just a statement. */
+.note--action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3);
 }
