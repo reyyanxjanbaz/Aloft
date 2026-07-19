@@ -128,7 +128,7 @@ export function App() {
 function TabView({ tab, position }: { tab: string; position: PlayerPosition }) {
   switch (tab) {
     case "hangar":
-      return <HangarView />;
+      return <HangarView position={position} />;
     case "social":
       return <SocialView />;
     case "system":

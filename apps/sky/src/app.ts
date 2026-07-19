@@ -3,9 +3,11 @@ import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import { CAPTURE_RADIUS_KM, catchIdUtc, typeName, type CatchRequest, type ClientMessage } from "@aloft/shared";
+import { registerAirframeRoutes } from "./airframes/routes";
 import { playerId as headerPlayerId, playerToken } from "./auth";
 import { dbReady } from "./db";
 import type { SkyHub } from "./hub";
+import type { FlightProvider } from "./providers/types";
 import type { PushStore } from "./push/store";
 import { registerSocialRoutes, toSharedCatch } from "./social/routes";
 import type { SocialStore } from "./social/store";
@@ -17,6 +19,8 @@ export interface AppDeps {
   hub: SkyHub;
   social: SocialStore;
   pushStore: PushStore;
+  /** Serves the living-hangar lookups; the hub keeps its own copy for polling. */
+  provider: FlightProvider;
   vapidPublicKey: string;
   /** Overridable so tests can trip the limiter without sending 12 requests. */
   rateLimits?: { catchPerMin?: number; globalPerMin?: number };
@@ -173,6 +177,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   );
 
   registerSocialRoutes(app, social);
+  registerAirframeRoutes(app, deps.provider, social);
 
   await app.register(async (instance) => {
     instance.get("/ws", { websocket: true }, (socket) => {

@@ -1,5 +1,5 @@
 import type { AircraftState } from "@aloft/shared";
-import type { FlightProvider } from "./types";
+import type { FlightProvider, LiveAirframe } from "./types";
 
 const COOLDOWN_MS = 60_000;
 
@@ -15,7 +15,16 @@ export class FailoverProvider implements FlightProvider {
     if (providers.length === 0) throw new Error("FailoverProvider needs at least one provider");
   }
 
-  async getAircraftNear(lat: number, lon: number, radiusNm: number): Promise<AircraftState[]> {
+  getAircraftNear(lat: number, lon: number, radiusNm: number): Promise<AircraftState[]> {
+    return this.attempt((p) => p.getAircraftNear(lat, lon, radiusNm));
+  }
+
+  getAirframe(hex: string): Promise<LiveAirframe | null> {
+    return this.attempt((p) => p.getAirframe(hex));
+  }
+
+  /** Runs `call` against each healthy provider in turn, benching failures. */
+  private async attempt<T>(call: (provider: FlightProvider) => Promise<T>): Promise<T> {
     const now = Date.now();
     const candidates = this.providers.filter((p) => (this.benchedUntil.get(p.name) ?? 0) <= now);
     // If everything is benched, try them all anyway rather than returning nothing.
@@ -24,7 +33,7 @@ export class FailoverProvider implements FlightProvider {
     let lastError: unknown;
     for (const provider of order) {
       try {
-        return await provider.getAircraftNear(lat, lon, radiusNm);
+        return await call(provider);
       } catch (err) {
         lastError = err;
         this.benchedUntil.set(provider.name, Date.now() + COOLDOWN_MS);

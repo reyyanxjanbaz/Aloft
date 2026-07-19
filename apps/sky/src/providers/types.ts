@@ -4,6 +4,28 @@ export interface FlightProvider {
   readonly name: string;
   /** Aircraft with a known position within `radiusNm` of the point. */
   getAircraftNear(lat: number, lon: number, radiusNm: number): Promise<AircraftState[]>;
+  /**
+   * Current state of one specific airframe, wherever it is in the world, or
+   * null when it isn't being tracked right now.
+   *
+   * Separate from getAircraftNear because the answer here is about identity,
+   * not geography, and because a grounded or position-less aircraft is a
+   * meaningful answer ("resting") rather than something to filter out.
+   */
+  getAirframe(hex: string): Promise<LiveAirframe | null>;
+}
+
+/** Where one collected airframe is right now. */
+export interface LiveAirframe {
+  hex: string;
+  airborne: boolean;
+  lat?: number;
+  lon?: number;
+  altFt?: number;
+  gsKt?: number;
+  callsign?: string;
+  /** Seconds since the position was last seen, when known. */
+  seenSec?: number;
 }
 
 /** Raw aircraft entry from readsb-style /v2 APIs (adsb.lol, airplanes.live). */
@@ -77,4 +99,42 @@ export async function fetchReadsbPoint(
   return (body.ac ?? [])
     .map((ac) => normalizeReadsb(ac, now))
     .filter((ac): ac is AircraftState => ac !== null);
+}
+
+/**
+ * One airframe by ICAO hex. Deliberately does NOT reuse normalizeReadsb:
+ * that drops ground and position-less aircraft as scope clutter, but here
+ * "on the ground at Basel" is exactly the answer being asked for.
+ */
+export async function fetchReadsbHex(
+  baseUrl: string,
+  hex: string,
+  timeoutMs = 8000
+): Promise<LiveAirframe | null> {
+  const clean = hex.trim().toLowerCase();
+  const res = await fetch(`${baseUrl}/v2/hex/${encodeURIComponent(clean)}`, {
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: { accept: "application/json", "user-agent": "aloft-sky/0.1 (dev)" },
+  });
+  if (!res.ok) throw new Error(`${baseUrl}/v2/hex -> HTTP ${res.status}`);
+  const body = (await res.json()) as { ac?: ReadsbAircraft[] };
+  const ac = (body.ac ?? []).find((a) => a.hex?.toLowerCase() === clean);
+  if (!ac) return null;
+
+  const geom = typeof ac.alt_geom === "number" ? ac.alt_geom : undefined;
+  const baro = typeof ac.alt_baro === "number" ? ac.alt_baro : undefined;
+  const altFt = geom ?? baro;
+  const gsKt = ac.gs;
+  const onGround = ac.alt_baro === "ground";
+
+  return {
+    hex: clean,
+    airborne: !onGround && (altFt ?? 0) >= AIRBORNE_MIN_ALT_FT,
+    lat: typeof ac.lat === "number" ? ac.lat : undefined,
+    lon: typeof ac.lon === "number" ? ac.lon : undefined,
+    altFt,
+    gsKt,
+    callsign: ac.flight?.trim() || undefined,
+    seenSec: ac.seen_pos,
+  };
 }

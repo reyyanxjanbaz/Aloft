@@ -4,7 +4,7 @@ import type { AircraftState } from "@aloft/shared";
 import { buildApp, type AppDeps } from "./app";
 import { waitForDb } from "./db";
 import { SkyHub } from "./hub";
-import type { FlightProvider } from "./providers/types";
+import type { FlightProvider, LiveAirframe } from "./providers/types";
 import { PushStore } from "./push/store";
 import { SocialStore } from "./social/store";
 import { describeIfDb, withCleanDb } from "./testing/db";
@@ -29,11 +29,17 @@ function aircraftAt(hex: string, lat: number, lon: number): AircraftState {
 class CountingProvider implements FlightProvider {
   readonly name = "counting";
   calls = 0;
+  hexCalls = 0;
   present: string[] = [];
 
   async getAircraftNear(lat: number, lon: number): Promise<AircraftState[]> {
     this.calls++;
     return this.present.map((hex) => aircraftAt(hex, lat + 0.01, lon));
+  }
+
+  async getAirframe(hex: string): Promise<LiveAirframe | null> {
+    this.hexCalls++;
+    return { hex, airborne: true, lat: 51.5, lon: -0.4, altFt: 36_000, gsKt: 447 };
   }
 }
 
@@ -46,6 +52,7 @@ async function makeApp(over: Partial<AppDeps> = {}): Promise<{
   const social = (over.social as SocialStore) ?? new SocialStore();
   const app = await buildApp({
     hub: new SkyHub(provider),
+    provider,
     social,
     pushStore: new PushStore(),
     vapidPublicKey: "test-key",
@@ -225,6 +232,74 @@ describeIfDb("social read routes reject impersonation", () => {
         const res = await app.inject({ method: "GET", url, headers });
         expect(res.statusCode, url).toBe(200);
       }
+    });
+  });
+});
+
+describeIfDb("living hangar lookups", () => {
+  let app: FastifyInstance;
+  let provider: CountingProvider;
+  let social: SocialStore;
+
+  beforeEach(async () => {
+    await waitForDb();
+    ({ app, provider, social } = await makeApp());
+  });
+  afterEach(async () => {
+    await app.close();
+  });
+
+  async function authHeaders(): Promise<Record<string, string>> {
+    const reg = await social.register("Collector");
+    if (!reg.ok || !reg.token) throw new Error("registration failed");
+    return { "x-player-id": reg.player.id, "x-player-token": reg.token };
+  }
+
+  it("requires authentication", async () => {
+    await withCleanDb(async () => {
+      const single = await app.inject({ method: "GET", url: "/airframe/4010ee/live" });
+      const batch = await app.inject({ method: "POST", url: "/airframes/live", payload: { hexes: ["4010ee"] } });
+      expect(single.statusCode).toBe(401);
+      expect(batch.statusCode).toBe(401);
+      expect(provider.hexCalls).toBe(0);
+    });
+  });
+
+  it("serves a second request for the same airframe from cache", async () => {
+    await withCleanDb(async () => {
+      const headers = await authHeaders();
+      await app.inject({ method: "GET", url: "/airframe/4010ee/live", headers });
+      await app.inject({ method: "GET", url: "/airframe/4010ee/live", headers });
+      // Every hex is its own upstream request, so the cache is what keeps
+      // this feature from hammering a free service.
+      expect(provider.hexCalls).toBe(1);
+    });
+  });
+
+  it("rejects a malformed hex without asking upstream", async () => {
+    await withCleanDb(async () => {
+      const headers = await authHeaders();
+      const res = await app.inject({ method: "GET", url: "/airframe/zzz/live", headers });
+      expect(res.statusCode).toBe(400);
+      expect(provider.hexCalls).toBe(0);
+    });
+  });
+
+  it("caps a fleet request and dedupes within it", async () => {
+    await withCleanDb(async () => {
+      const headers = await authHeaders();
+      const tooMany = Array.from({ length: 13 }, (_, i) => `4010${String(i).padStart(2, "0")}`);
+      const capped = await app.inject({ method: "POST", url: "/airframes/live", headers, payload: { hexes: tooMany } });
+      expect(capped.statusCode).toBe(400);
+
+      const dupes = await app.inject({
+        method: "POST",
+        url: "/airframes/live",
+        headers,
+        payload: { hexes: ["4010ee", "4010EE", "4010ee"] },
+      });
+      expect(dupes.statusCode).toBe(200);
+      expect(provider.hexCalls).toBe(1);
     });
   });
 });

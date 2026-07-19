@@ -5,13 +5,16 @@ import { AchievementIcon } from "../../ui/AchievementIcon";
 import { IconClose, IconStreak } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
 import { Stage } from "../reveal/Stage";
+import type { PlayerPosition } from "../../lib/useGeolocation";
 import { AircraftGlyph } from "./AircraftGlyph";
 import { listCatches, type HangarEntry } from "./db";
+import { FleetStatus } from "./FleetStatus";
+import { LiveStatus } from "./LiveStatus";
 import "./hangar.css";
 
 type Filter = "all" | "rare";
 
-export function HangarView() {
+export function HangarView({ position }: { position: PlayerPosition }) {
   const [entries, setEntries] = useState<HangarEntry[] | null>(null);
   const [selected, setSelected] = useState<HangarEntry | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
@@ -68,6 +71,8 @@ export function HangarView() {
         <Total label="Rarity points" value={points} />
         <Total label="Badges" value={`${earned.size}/${ACHIEVEMENTS.length}`} />
       </dl>
+
+      {all.length > 0 && <FleetStatus hexes={[...new Set(all.map((e) => e.hex.toLowerCase()))]} />}
 
       {unreadable ? (
         <p className="empty">
@@ -174,6 +179,7 @@ export function HangarView() {
                 {selected.callsign || selected.reg || selected.hex.toUpperCase()} ·{" "}
                 {RARITY_LABEL[selected.rarity]}
               </span>
+              <LiveStatus hex={selected.hex} position={position} />
             </div>
             <button className="icon-btn" onClick={() => setSelected(null)} aria-label="Close viewer">
               <IconClose size={20} weight="bold" />

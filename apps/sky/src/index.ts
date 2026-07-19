@@ -25,7 +25,7 @@ const pushStore = new PushStore();
 const social = new SocialStore();
 startGeofence(provider, pushStore);
 
-const app = await buildApp({ hub, social, pushStore, vapidPublicKey });
+const app = await buildApp({ hub, social, pushStore, provider, vapidPublicKey });
 
 await app.listen({ port: PORT, host: "0.0.0.0" });
 console.log(`[sky] aloft-sky listening on :${PORT}`);

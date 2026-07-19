@@ -30,6 +30,10 @@ class CountingProvider implements FlightProvider {
     this.lastRadiusNm = radiusNm;
     return [aircraftAt(lat + 0.01, lon)];
   }
+
+  async getAirframe(): Promise<null> {
+    return null; // unused by the hub
+  }
 }
 
 const AUTHED = { allowOnDemandPoll: true };

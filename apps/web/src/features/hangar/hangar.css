@@ -194,3 +194,46 @@
   font-size: var(--t-data-sm);
   color: var(--ink-2);
 }
+
+/* ── Live status ──────────────────────────────────────── */
+
+/*
+ * The collection with a pulse: where each airframe actually is right now.
+ * Deliberately understated — a readout line, not a badge — so it informs
+ * the card without competing with the model above it.
+ */
+.fleet {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+
+.fleet__count {
+  color: var(--phos);
+  font-size: var(--t-data);
+  font-variant-numeric: tabular-nums;
+}
+
+.live {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding-top: var(--s-2);
+}
+
+.live__text {
+  color: var(--ink-2);
+  font-size: var(--t-data-sm);
+}
+
+.live--airborne .live__text {
+  color: var(--phos);
+}
+
+.live--pending .live__text {
+  color: var(--ink-3);
+}
