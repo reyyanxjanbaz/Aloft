@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "description": "Pokémon GO for avgeeks — catch real planes from the real sky.",
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": [
     "packages/*",
     "apps/*"
