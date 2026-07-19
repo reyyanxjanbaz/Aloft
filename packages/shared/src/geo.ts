@@ -63,7 +63,10 @@ export function angleDiffDeg(a: number, b: number): number {
   let d = (b - a) % 360;
   if (d <= -180) d += 360;
   if (d > 180) d -= 360;
-  return d;
+  // JS `%` yields -0 for exact multiples of 360 (e.g. 730 vs 10), which
+  // compares equal to 0 but fails Object.is and flips the sign of 1/d.
+  // Callers reason about the sign of this value, so hand back a plain 0.
+  return d === 0 ? 0 : d;
 }
 
 const WINDS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];

@@ -15,7 +15,7 @@
     "dev:sky": "npm run dev --workspace apps/sky",
     "dev:web": "npm run dev --workspace apps/web",
     "build": "npm run build --workspace apps/web",
-    "test": "npm run test --workspace packages/shared",
+    "test": "npm run test --workspaces --if-present",
     "gen:icons": "node scripts/gen-icons.mjs",
     "db:schema": "node scripts/apply-schema.mjs"
   },

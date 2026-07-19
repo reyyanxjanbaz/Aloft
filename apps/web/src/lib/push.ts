@@ -56,7 +56,12 @@ export async function disableSkyPings(): Promise<void> {
   }).catch(() => {});
 }
 
-function urlBase64ToUint8Array(base64: string): Uint8Array {
+/**
+ * VAPID keys arrive base64url-encoded; the subscription API needs raw bytes.
+ * Exported for tests — a padding error here is silent, producing a key the
+ * push service rejects only at send time.
+ */
+export function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
   const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
   const raw = atob(b64);

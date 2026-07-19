@@ -160,7 +160,8 @@ export function releaseMapView(): void {
   sendSub();
 }
 
-function clampView(v: View): View {
+/** Exported for tests — the bounds must match what the server will accept. */
+export function clampView(v: View): View {
   return {
     ...v,
     viewRadiusKm: Math.min(Math.max(v.viewRadiusKm, MIN_VIEW_RADIUS_KM), MAX_VIEW_RADIUS_KM),
@@ -168,7 +169,7 @@ function clampView(v: View): View {
 }
 
 /** Ignore sub-kilometre jitter so a resting map doesn't spam the tower. */
-function sameView(a: View, b: View): boolean {
+export function sameView(a: View, b: View): boolean {
   return (
     Math.abs(a.lat - b.lat) < 0.01 &&
     Math.abs(a.lon - b.lon) < 0.01 &&

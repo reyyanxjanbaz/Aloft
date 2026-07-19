@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { bearingDeg, deadReckon, distanceM, elevationDeg, FT_TO_M } from "./geo";
+import {
+  angleDiffDeg,
+  bearingDeg,
+  compassWord,
+  deadReckon,
+  destinationPoint,
+  distanceM,
+  elevationDeg,
+  FT_TO_M,
+} from "./geo";
 
 // Fixture: observer in central London, plane over Heathrow (~23 km west).
 const LON = { lat: 51.5074, lon: -0.1278 };
@@ -76,5 +85,72 @@ describe("deadReckon", () => {
   it("no movement when speed is negative or NaN (corrupted reading)", () => {
     expect(deadReckon(51.5, -0.12, 90, -50, 10)).toEqual([51.5, -0.12]);
     expect(deadReckon(51.5, -0.12, 90, NaN, 10)).toEqual([51.5, -0.12]);
+  });
+});
+
+describe("deadReckon with an unknown track", () => {
+  it("does not move an aircraft that isn't broadcasting a track", () => {
+    // A defaulted 0 here is indistinguishable from due north, and used to
+    // send trackless aircraft sailing northward at cruise speed.
+    expect(deadReckon(51.5, -0.12, null, 450, 30)).toEqual([51.5, -0.12]);
+  });
+});
+
+describe("angleDiffDeg", () => {
+  it("takes the short way around north", () => {
+    expect(angleDiffDeg(350, 10)).toBe(20);
+    expect(angleDiffDeg(10, 350)).toBe(-20);
+  });
+
+  it("is zero for identical bearings", () => {
+    expect(angleDiffDeg(123, 123)).toBe(0);
+  });
+
+  it("returns +180 rather than -180 at the antipode", () => {
+    expect(angleDiffDeg(0, 180)).toBe(180);
+  });
+
+  it("handles bearings outside 0-360", () => {
+    expect(angleDiffDeg(730, 10)).toBe(0); // 730 == 10
+  });
+});
+
+describe("destinationPoint", () => {
+  it("round-trips with distanceM and bearingDeg", () => {
+    const [lat, lon] = destinationPoint(51.47, -0.45, 73, 12_000);
+    expect(distanceM(51.47, -0.45, lat, lon)).toBeCloseTo(12_000, 0);
+    expect(bearingDeg(51.47, -0.45, lat, lon)).toBeCloseTo(73, 1);
+  });
+
+  it("wraps the longitude when crossing the antimeridian", () => {
+    // Heading east from just west of the date line must not produce 180.5.
+    const [, lon] = destinationPoint(0, 179.9, 90, 40_000);
+    expect(lon).toBeLessThan(0);
+    expect(lon).toBeGreaterThan(-180);
+  });
+});
+
+describe("distance across the antimeridian", () => {
+  it("measures the short way, not most of the way round the world", () => {
+    // A player in Fiji must see contacts on the other side of the date line.
+    const km = distanceM(0, 179.5, 0, -179.5) / 1000;
+    expect(km).toBeGreaterThan(100);
+    expect(km).toBeLessThan(120);
+  });
+});
+
+describe("compassWord", () => {
+  it("names each of the eight winds", () => {
+    expect(compassWord(0)).toBe("north");
+    expect(compassWord(45)).toBe("northeast");
+    expect(compassWord(90)).toBe("east");
+    expect(compassWord(180)).toBe("south");
+    expect(compassWord(270)).toBe("west");
+  });
+
+  it("rounds to the nearest wind and wraps past 360", () => {
+    expect(compassWord(350)).toBe("north");
+    expect(compassWord(361)).toBe("north");
+    expect(compassWord(-90)).toBe("west");
   });
 });
