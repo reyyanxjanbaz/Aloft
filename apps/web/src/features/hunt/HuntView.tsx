@@ -1,31 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  angleDiffDeg,
-  bearingDeg,
-  deadReckon,
-  distanceM,
-  elevationDeg,
-  FT_TO_M,
-  typeName,
-  type CatchResponse,
-} from "@aloft/shared";
+import { typeName, type AircraftState } from "@aloft/shared";
+import { submitCatch } from "../../lib/catchQueue";
 import { primeAudio, sfxCapture, sfxLockOn, sfxLockTick, vibrate } from "../../lib/feedback";
-import { playerHeaders } from "../../lib/player";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { useApp } from "../../state/app";
-import { SKY_URL, usePlanes } from "../../state/planes";
+import { serverNow, usePlanes } from "../../state/planes";
 import { IconClose, IconHunt, IconWarning } from "../../ui/icons";
-import { entryFromCatch, saveCatch } from "../hangar/db";
+import { entryFromCatch } from "../hangar/db";
 import { BearingTape, PX_PER_DEG } from "./BearingTape";
+import { CAPTURE_SECONDS, computeAimSolution, stepProgress } from "./aimMath";
 import { Reticle, RING_C } from "./Reticle";
 import { useOrientation } from "./useOrientation";
 import "./hunt.css";
 
-const AZ_TOLERANCE = 15;
-const EL_TOLERANCE = 12;
-const CAPTURE_SECONDS = 2.5;
 /** Approximate horizontal field of view of a phone rear camera. */
 const CAMERA_FOV_DEG = 65;
+/**
+ * How long a contact may be missing from the feed before the hunt is
+ * abandoned. A single dropped poll — an upstream gap, or a provider
+ * failover changing the aircraft set — used to end the hunt outright.
+ */
+const LOST_GRACE_MS = 8000;
 
 type Phase = "searching" | "near" | "locked";
 
@@ -56,9 +51,23 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
   const [phase, setPhase] = useState<Phase>("searching");
   const [readouts, setReadouts] = useState<Readouts | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [faded, setFaded] = useState(false);
+  const [lost, setLost] = useState(false);
+
+  // The position is read through a ref inside the frame loop so that a GPS
+  // tick — which arrives roughly once a second — cannot tear the loop down.
+  // It used to be an effect dependency, so a fix landing while a capture was
+  // in flight restarted the effect with submittingRef stuck true: the ring
+  // froze full, nothing happened, and the tower had already recorded the
+  // catch (burning its first-spotter credit).
+  const posRef = useRef(position);
+  posRef.current = position;
 
   const plane = usePlanes((s) => s.planes.get(hex));
-  const lost = armed && !plane;
+  /** Last state we saw, so a brief feed gap doesn't abandon the hunt. */
+  const lastPlaneRef = useRef<AircraftState | null>(null);
+  const missingSinceRef = useRef<number | null>(null);
+  if (plane) lastPlaneRef.current = plane;
 
   useEffect(() => {
     if (!armed) return;
@@ -100,30 +109,31 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
 
     const submit = async () => {
       sfxCapture();
-      try {
-        const res = await fetch(`${SKY_URL}/catch`, {
-          method: "POST",
-          headers: { "content-type": "application/json", ...playerHeaders() },
-          body: JSON.stringify({ hex, lat: position.lat, lon: position.lon, ts: Date.now() }),
+      const pos = posRef.current;
+      // Timestamped against the server's clock: a device minutes out of sync
+      // would otherwise have every capture rejected as "too far from server
+      // time" with nothing to explain it.
+      const outcome = await submitCatch({ hex, lat: pos.lat, lon: pos.lon, ts: serverNow() });
+      if (cancelled) return;
+
+      if (outcome.status === "caught") {
+        go({
+          name: "reveal",
+          entry: entryFromCatch(outcome.body.catch),
+          isNew: true,
+          firstSpotter: outcome.body.firstSpotter === true,
+          localSaveFailed: outcome.localSaveFailed,
         });
-        const body = (await res.json()) as CatchResponse;
-        if (cancelled) return;
-        if (body.ok) {
-          const entry = entryFromCatch(body.catch);
-          const { isNew } = await saveCatch(entry);
-          if (cancelled) return;
-          go({ name: "reveal", entry, isNew, firstSpotter: body.firstSpotter === true });
-        } else {
-          setFailure(body.reason);
-          progressRef.current = 0;
-          submittingRef.current = false;
-        }
-      } catch {
-        if (cancelled) return;
-        setFailure("Lost the link to the tower. Hold aim to try again.");
-        progressRef.current = 0;
-        submittingRef.current = false;
+        return;
       }
+
+      setFailure(
+        outcome.status === "queued"
+          ? "No link to the tower — the catch is saved and will be confirmed when you reconnect."
+          : outcome.reason
+      );
+      progressRef.current = 0;
+      submittingRef.current = false;
     };
 
     const frame = (now: number) => {
@@ -131,24 +141,34 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
       const dt = Math.min((now - last) / 1000, 0.1);
       last = now;
 
-      const ac = usePlanes.getState().planes.get(hex);
+      // Fall back to the last known state through a brief feed gap, and only
+      // give up once the contact has really been absent.
+      const live = usePlanes.getState().planes.get(hex);
+      if (live) {
+        missingSinceRef.current = null;
+        if (faded) setFaded(false);
+      } else {
+        missingSinceRef.current ??= now;
+        const goneFor = now - missingSinceRef.current;
+        if (goneFor > LOST_GRACE_MS) {
+          if (!lost) setLost(true);
+          return;
+        }
+        if (!faded) setFaded(true);
+      }
+      const ac = live ?? lastPlaneRef.current;
       if (!ac || submittingRef.current) return;
 
-      const ageSec = (Date.now() - ac.ts) / 1000 + ac.seenPosSec;
-      const [pLat, pLon] = deadReckon(ac.lat, ac.lon, ac.track, ac.gsKt, Math.min(ageSec, 60));
-      const groundM = distanceM(position.lat, position.lon, pLat, pLon);
-      const az = bearingDeg(position.lat, position.lon, pLat, pLon);
-      const el = elevationDeg(groundM, 0, ac.altFt * FT_TO_M);
-
-      const aim = aimRef.current;
-      const dAz = angleDiffDeg(aim.heading, az);
-      const dEl = el - aim.pitch;
-      const aligned = Math.abs(dAz) < AZ_TOLERANCE && Math.abs(dEl) < EL_TOLERANCE;
-      const near = Math.abs(dAz) < AZ_TOLERANCE * 2.5 && Math.abs(dEl) < EL_TOLERANCE * 2.5;
+      const { dAz, dEl, aligned, near, groundM, az, el } = computeAimSolution(
+        posRef.current,
+        aimRef.current,
+        ac,
+        serverNow()
+      );
 
       // Heading tape: slide the scale, keep the index fixed.
       if (tapeRef.current) {
-        const wrapped = ((aim.heading % 360) + 360) % 360 + 360;
+        const wrapped = ((aimRef.current.heading % 360) + 360) % 360 + 360;
         tapeRef.current.style.transform = `translate3d(${-wrapped * PX_PER_DEG}px,0,0)`;
       }
 
@@ -186,10 +206,7 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
         setPhase(nextPhase);
       }
 
-      progressRef.current = Math.max(
-        0,
-        Math.min(1, progressRef.current + (aligned ? dt / CAPTURE_SECONDS : -dt / 1.5))
-      );
+      progressRef.current = stepProgress(progressRef.current, dt, aligned);
       if (ringRef.current) {
         ringRef.current.style.strokeDashoffset = String(RING_C * (1 - progressRef.current));
       }
@@ -220,8 +237,13 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      // If this loop is ever restarted, it must not inherit a half-finished
+      // capture: a stuck submittingRef silently freezes the ring forever.
+      submittingRef.current = false;
+      progressRef.current = 0;
     };
-  }, [armed, hex, position.lat, position.lon, aimRef, go]);
+    // Deliberately not depending on `position` — see posRef above.
+  }, [armed, hex, aimRef, go, faded, lost]);
 
   // Drag-to-aim fallback for devices without a compass.
   const dragLast = useRef<{ x: number; y: number } | null>(null);
@@ -337,13 +359,19 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
               <span className="readout__value">
                 {readouts ? Math.round(Math.abs(readouts.elevation)) : "—"}{" "}
                 <span className="unit">
-                  {!readouts || readouts.elevation === 0 ? "level" : readouts.elevation > 0 ? "up" : "down"}
+                  {/* An exact-zero float essentially never occurs, so "level" was unreachable. */}
+                  {!readouts || Math.abs(readouts.elevation) < 0.5
+                    ? "level"
+                    : readouts.elevation > 0
+                      ? "up"
+                      : "down"}
                 </span>
               </span>
             </div>
           </div>
 
-          {mode === "drag" && (
+          {faded && <p className="hunt__note">Signal faded — reacquiring</p>}
+          {mode === "drag" && !faded && (
             <p className="hunt__note">No compass detected — drag to aim</p>
           )}
           {failure && (

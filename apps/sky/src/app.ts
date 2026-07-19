@@ -203,6 +203,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
             lat: msg.lat,
             lon: msg.lon,
             viewRadiusKm: msg.viewRadiusKm,
+            playerLat: msg.playerLat,
+            playerLon: msg.playerLon,
             playerId: verifiedPlayerId,
             send: (m) => {
               if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(m));

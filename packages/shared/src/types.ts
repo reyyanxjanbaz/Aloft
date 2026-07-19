@@ -14,8 +14,8 @@ export interface AircraftState {
   altFt: number;
   /** Ground speed in knots. */
   gsKt: number;
-  /** True track in degrees (0–360). */
-  track: number;
+  /** True track in degrees (0–360), or null when not broadcast. */
+  track: number | null;
   /** Seconds since this position fix (staleness). */
   seenPosSec: number;
   /** Server timestamp (ms epoch) when this state was captured. */
@@ -33,6 +33,16 @@ export type ClientMessage = {
    * capture what is within CAPTURE_RADIUS_KM.
    */
   viewRadiusKm: number;
+  /**
+   * Where the device itself is, when that differs from the viewport centre —
+   * the player can pan the scope anywhere without moving. The anti-cheat
+   * position check uses this in preference to `lat`/`lon`, so exploring the
+   * map never makes a legitimate catch look like it came from the wrong
+   * place. Trusted only alongside a verified `playerToken`, exactly as
+   * `lat`/`lon` were.
+   */
+  playerLat?: number;
+  playerLon?: number;
   /**
    * Optional player identity, so the server can remember where this player's
    * device last reported itself — used to sanity-check that a later /catch

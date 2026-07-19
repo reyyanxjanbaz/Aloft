@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { CAPTURE_RADIUS_KM, distanceM } from "@aloft/shared";
+import { projectedPosition } from "../../lib/project";
 import type { PlayerPosition } from "../../lib/useGeolocation";
-import { usePlanes } from "../../state/planes";
+import { serverNow, usePlanes } from "../../state/planes";
 import { IconPin, IconTower } from "../../ui/icons";
 import { ContactCard } from "./ContactCard";
 import { RadarMap } from "./RadarMap";
@@ -12,9 +13,13 @@ export function RadarView({ position }: { position: PlayerPosition }) {
   const planes = usePlanes((s) => s.planes);
   const [recenter, setRecenter] = useState(0);
 
-  const inRange = [...planes.values()].filter(
-    (ac) => distanceM(position.lat, position.lon, ac.lat, ac.lon) <= CAPTURE_RADIUS_KM * 1000
-  ).length;
+  // Projected, exactly as the map and the contact card measure it — a raw
+  // position here made the HUD count disagree with the green markers.
+  const now = serverNow();
+  const inRange = [...planes.values()].filter((ac) => {
+    const p = projectedPosition(ac, now);
+    return distanceM(position.lat, position.lon, p.lat, p.lon) <= CAPTURE_RADIUS_KM * 1000;
+  }).length;
 
   return (
     <div className="scope">

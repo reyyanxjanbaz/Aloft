@@ -1,14 +1,10 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
-import {
-  CAPTURE_RADIUS_KM,
-  deadReckon,
-  destinationPoint,
-  distanceM,
-} from "@aloft/shared";
+import { CAPTURE_RADIUS_KM, destinationPoint, distanceM } from "@aloft/shared";
 import type { PlayerPosition } from "../../lib/useGeolocation";
-import { updateView, usePlanes } from "../../state/planes";
+import { projectedPosition } from "../../lib/project";
+import { releaseMapView, serverNow, setMapView, usePlanes } from "../../state/planes";
 import { applyScopeTheme } from "./scopeTheme";
 
 const STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
@@ -226,14 +222,15 @@ export function RadarMap({
           });
 
           readyRef.current = true;
-          updateView({ lat: map.getCenter().lat, lon: map.getCenter().lng, viewRadiusKm: viewRadiusKm(map) });
+          setMapView({ lat: map.getCenter().lat, lon: map.getCenter().lng, viewRadiusKm: viewRadiusKm(map) });
         });
     });
 
-    // Re-aim the feed whenever the scope settles on a new area.
+    // Re-aim the feed whenever the scope settles on a new area. While this
+    // map is mounted it owns the view; GPS ticks no longer override it.
     const onMoveEnd = () => {
       const c = map.getCenter();
-      updateView({ lat: c.lat, lon: c.lng, viewRadiusKm: viewRadiusKm(map) });
+      setMapView({ lat: c.lat, lon: c.lng, viewRadiusKm: viewRadiusKm(map) });
     };
     map.on("moveend", onMoveEnd);
 
@@ -251,6 +248,9 @@ export function RadarMap({
       cancelled = true;
       observer.disconnect();
       readyRef.current = false;
+      // Hand view ownership back so the feed follows the device again while
+      // the player is on another tab.
+      releaseMapView();
       map.remove();
       mapRef.current = null;
     };
@@ -289,7 +289,9 @@ export function RadarMap({
   useEffect(() => {
     let raf = 0;
     let last = 0;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Read live rather than latched at mount, so toggling the OS setting
+    // takes effect without reloading the app.
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
@@ -303,10 +305,9 @@ export function RadarMap({
 
       const { planes, selectedHex } = usePlanes.getState();
       const me = posRef.current;
-      const ts = Date.now();
       const features: GeoJSON.Feature[] = [];
 
-      if (!reducedMotion) {
+      if (!motionQuery.matches) {
         const bearing = ((now / 5000) * 360) % 360;
         const [tipLat, tipLon] = destinationPoint(
           me.lat,
@@ -328,8 +329,7 @@ export function RadarMap({
       }
 
       for (const ac of planes.values()) {
-        const ageSec = (ts - ac.ts) / 1000 + ac.seenPosSec;
-        const [lat, lon] = deadReckon(ac.lat, ac.lon, ac.track, ac.gsKt, Math.min(ageSec, 60));
+        const { lat, lon } = projectedPosition(ac, serverNow());
         const inRange = distanceM(me.lat, me.lon, lat, lon) <= CAPTURE_RADIUS_KM * 1000;
         const selected = ac.hex === selectedHex;
         features.push({
@@ -337,7 +337,9 @@ export function RadarMap({
           geometry: { type: "Point", coordinates: [lon, lat] },
           properties: {
             hex: ac.hex,
-            track: ac.track,
+            // Icon rotation only — a trackless aircraft is drawn nose-north
+            // rather than hidden, but it is never *projected* that way.
+            track: ac.track ?? 0,
             inRange,
             selected,
             // Magenta marks the active target, green marks a capturable contact.

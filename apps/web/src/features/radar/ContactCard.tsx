@@ -11,6 +11,7 @@ import {
   type AircraftState,
 } from "@aloft/shared";
 import { lookupRoute, type FlightRoute } from "../../lib/adsbdb";
+import { projectedPosition } from "../../lib/project";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { useApp } from "../../state/app";
 import { usePlanes } from "../../state/planes";
@@ -90,10 +91,15 @@ function ContactBody({
   onClose: () => void;
   onHunt: () => void;
 }) {
-  const groundM = distanceM(position.lat, position.lon, plane.lat, plane.lon);
+  // Projected to now, matching the map and the HUD count. Measuring the raw
+  // position here meant a fast contact near the ring could be green and
+  // "in range" on the scope while this card said out of range and greyed out
+  // the Hunt button.
+  const p = projectedPosition(plane);
+  const groundM = distanceM(position.lat, position.lon, p.lat, p.lon);
   const km = groundM / 1000;
   const elev = elevationDeg(groundM, 0, plane.altFt * FT_TO_M);
-  const bearing = bearingDeg(position.lat, position.lon, plane.lat, plane.lon);
+  const bearing = bearingDeg(position.lat, position.lon, p.lat, p.lon);
   const rarity = rarityFor(plane.typeIcao);
   const inRange = km <= CAPTURE_RADIUS_KM;
 
@@ -132,8 +138,10 @@ function ContactBody({
         <Readout label="Bearing" value={`${Math.round(bearing).toString().padStart(3, "0")}°`} unit={compass(bearing)} />
         <Readout
           label="Elevation"
-          value={elev === 0 ? "Level" : `${Math.round(Math.abs(elev))}°`}
-          unit={elev === 0 ? "" : elev > 0 ? "up" : "below"}
+          // A float is essentially never exactly 0, so an equality check here
+          // meant "Level" could never appear.
+          value={Math.abs(elev) < 0.5 ? "Level" : `${Math.round(Math.abs(elev))}°`}
+          unit={Math.abs(elev) < 0.5 ? "" : elev > 0 ? "up" : "below"}
         />
         <Readout label="Tail" value={plane.reg ?? "—"} unit="" />
       </dl>

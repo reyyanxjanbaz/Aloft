@@ -7,7 +7,7 @@ import { enableSkyPings, pushPermission } from "../../lib/push";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { useApp } from "../../state/app";
 import { AchievementIcon } from "../../ui/AchievementIcon";
-import { IconBell, IconCheck, IconMedal, IconStar } from "../../ui/icons";
+import { IconBell, IconCheck, IconMedal, IconStar, IconWarning } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
 import { getSeenAchievements, listCatches, setSeenAchievements, type HangarEntry } from "../hangar/db";
 import { Stage } from "./Stage";
@@ -19,11 +19,14 @@ export function RevealView({
   entry,
   isNew,
   firstSpotter = false,
+  localSaveFailed = false,
   position,
 }: {
   entry: HangarEntry;
   isNew: boolean;
   firstSpotter?: boolean;
+  /** Tower has it; this device's copy failed to write. */
+  localSaveFailed?: boolean;
   position: PlayerPosition;
 }) {
   const go = useApp((s) => s.go);
@@ -101,6 +104,14 @@ export function RevealView({
             <IconStar size={14} weight="fill" />
             First spotter — nobody on Aloft had caught this airframe before
           </motion.p>
+        )}
+
+        {localSaveFailed && (
+          <p className="reveal__note">
+            <IconWarning size={13} weight="bold" />
+            Recorded with the tower, but this device couldn&apos;t save its own copy — the catch
+            won&apos;t appear in your hangar.
+          </p>
         )}
 
         {route && (

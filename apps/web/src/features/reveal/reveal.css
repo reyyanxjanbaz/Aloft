@@ -104,6 +104,24 @@
   line-height: 1.4;
 }
 
+/* Advisory, not an error: the catch is real, only the local copy is missing. */
+.reveal__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--rule-hot);
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.45;
+}
+
+.reveal__note svg {
+  margin-top: 2px;
+  color: var(--amber);
+}
+
 .reveal__route {
   display: flex;
   align-items: center;

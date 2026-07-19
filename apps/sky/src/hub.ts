@@ -26,6 +26,12 @@ export interface Subscriber {
   lon: number;
   /** Viewport radius — how much sky this client is looking at. */
   viewRadiusKm: number;
+  /**
+   * Where the device is, when the player has panned the scope away from
+   * themselves. Falls back to lat/lon when absent.
+   */
+  playerLat?: number;
+  playerLon?: number;
   /** Player identity, if known — enables the catch-location cross-check below. */
   playerId?: string;
   send(msg: ServerMessage): void;
@@ -75,7 +81,7 @@ const PLAYER_POSITION_TOLERANCE_KM = CAPTURE_RADIUS_KM * 2;
 
 interface AirframeHistory {
   latest: AircraftState;
-  fixes: { lat: number; lon: number; track: number; gsKt: number; ts: number }[];
+  fixes: { lat: number; lon: number; track: number | null; gsKt: number; ts: number }[];
 }
 
 interface PlayerPosition {
@@ -232,7 +238,12 @@ export class SkyHub {
     );
 
     if (sub.playerId) {
-      this.playerPositions.set(sub.playerId, { lat: sub.lat, lon: sub.lon, ts: Date.now() });
+      // Prefer the device's own position over the viewport centre: a player
+      // panning the scope across the country is still standing where they
+      // were, and the catch cross-check must not treat that as teleporting.
+      const lat = Number.isFinite(sub.playerLat) ? (sub.playerLat as number) : sub.lat;
+      const lon = Number.isFinite(sub.playerLon) ? (sub.playerLon as number) : sub.lon;
+      this.playerPositions.set(sub.playerId, { lat, lon, ts: Date.now() });
     }
 
     const key = cellKey(sub.lat, sub.lon);

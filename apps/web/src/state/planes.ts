@@ -43,9 +43,47 @@ interface View {
 
 let socket: WebSocket | null = null;
 let retryMs = 1000;
-let view: View | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let skyPlayerId: string | undefined;
 let skyPlayerToken: string | undefined;
+
+/**
+ * The feed view has two possible owners and they must not fight.
+ *
+ * `gpsPos` is where the device says it is; `mapView` is what the player has
+ * panned the scope to. When the map is driving, it wins — otherwise every GPS
+ * tick (roughly once a second) re-aimed the feed at the player and snapped a
+ * deliberate pan straight back, while also clamping the stream to the default
+ * radius so contacts the player had zoomed out to see vanished.
+ *
+ * The device position is still sent separately as `playerLat/playerLon`, so
+ * panning the map never disturbs the server's anti-cheat position check.
+ */
+let gpsPos: { lat: number; lon: number } | null = null;
+let mapView: View | null = null;
+
+/** Default feed radius when the map isn't driving the view. */
+const FOLLOW_RADIUS_KM = 60;
+
+/**
+ * Offset between this device's clock and the server's, smoothed across
+ * frames. Aircraft timestamps are stamped server-side, so a phone whose clock
+ * is minutes off would otherwise mis-age every position (projecting aircraft
+ * far from where they are) and have every catch rejected as "timestamp too
+ * far from server time".
+ */
+let serverSkewMs: number | null = null;
+
+/** Best estimate of the server's current clock. */
+export function serverNow(): number {
+  return Date.now() + (serverSkewMs ?? 0);
+}
+
+function currentView(): View | null {
+  if (mapView) return mapView;
+  if (gpsPos) return clampView({ ...gpsPos, viewRadiusKm: FOLLOW_RADIUS_KM });
+  return null;
+}
 
 /**
  * Attaches this device's player identity to the live feed, so the server can
@@ -60,16 +98,24 @@ export function setSkyIdentity(playerId: string | undefined, playerToken: string
 }
 
 function sendSub(): void {
+  const view = currentView();
   if (socket?.readyState === WebSocket.OPEN && view) {
     socket.send(
-      JSON.stringify({ type: "sub", ...view, playerId: skyPlayerId, playerToken: skyPlayerToken })
+      JSON.stringify({
+        type: "sub",
+        ...view,
+        playerLat: gpsPos?.lat,
+        playerLon: gpsPos?.lon,
+        playerId: skyPlayerId,
+        playerToken: skyPlayerToken,
+      })
     );
   }
 }
 
 /** Opens the scope feed. Safe to call repeatedly; only one socket is kept. */
-export function connectSky(next: View): void {
-  view = clampView(next);
+export function connectSky(next: { lat: number; lon: number }): void {
+  gpsPos = { lat: next.lat, lon: next.lon };
   if (socket && socket.readyState <= WebSocket.OPEN) {
     sendSub();
     return;
@@ -78,13 +124,39 @@ export function connectSky(next: View): void {
 }
 
 /**
- * Re-aims the feed as the map moves. Reuses the open socket — panning the
- * scope must never drop the connection.
+ * Reports the device's own position. Only re-aims the feed when the map isn't
+ * driving it, but always refreshes the position the server tracks for the
+ * anti-cheat check.
  */
-export function updateView(next: View): void {
+export function setGpsPosition(lat: number, lon: number): void {
+  const prev = gpsPos;
+  gpsPos = { lat, lon };
+  if (mapView) {
+    // Map owns the view; still resend so the server's idea of where this
+    // player is stays current, but only when it has meaningfully moved.
+    if (!prev || !sameView({ ...prev, viewRadiusKm: 0 }, { lat, lon, viewRadiusKm: 0 })) sendSub();
+    return;
+  }
+  const next = currentView();
+  if (prev && next && sameView(clampView({ ...prev, viewRadiusKm: FOLLOW_RADIUS_KM }), next)) return;
+  sendSub();
+}
+
+/**
+ * Hands view ownership to the map as the player pans or zooms. Reuses the
+ * open socket — moving the scope must never drop the connection.
+ */
+export function setMapView(next: View): void {
   const clamped = clampView(next);
-  if (view && sameView(view, clamped)) return;
-  view = clamped;
+  if (mapView && sameView(mapView, clamped)) return;
+  mapView = clamped;
+  sendSub();
+}
+
+/** The map is gone (tab switched away); fall back to following the device. */
+export function releaseMapView(): void {
+  if (!mapView) return;
+  mapView = null;
   sendSub();
 }
 
@@ -105,6 +177,10 @@ function sameView(a: View, b: View): boolean {
 }
 
 function open(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   const ws = new WebSocket(SKY_URL.replace(/^http/, "ws") + "/ws");
   socket = ws;
   usePlanes.setState({ link: "connecting" });
@@ -123,7 +199,13 @@ function open(): void {
     } catch {
       return; // one malformed frame shouldn't take down the feed
     }
-    if (msg.type === "planes") {
+    if (msg.type === "planes" && Array.isArray(msg.aircraft)) {
+      // Aircraft timestamps come from the server's clock, so track the offset
+      // rather than trusting this device's. Smoothed so one delayed frame
+      // doesn't yank the estimate around.
+      const sample = msg.now - Date.now();
+      serverSkewMs = serverSkewMs === null ? sample : serverSkewMs * 0.7 + sample * 0.3;
+
       const planes = new Map<string, AircraftState>();
       for (const ac of msg.aircraft) planes.set(ac.hex, ac);
       usePlanes.setState({ planes, link: "live", lastFrameAt: Date.now() });
@@ -138,7 +220,7 @@ function open(): void {
   ws.onclose = () => {
     if (socket !== ws) return; // superseded by a newer socket
     usePlanes.setState({ link: "offline" });
-    setTimeout(open, retryMs);
+    reconnectTimer = setTimeout(open, retryMs);
     retryMs = Math.min(retryMs * 2, 15_000);
   };
 }
@@ -146,6 +228,13 @@ function open(): void {
 export function disconnectSky(): void {
   const ws = socket;
   socket = null; // stops the onclose handler from scheduling a reconnect
+  // A reconnect scheduled *before* this call would otherwise still fire and
+  // resurrect a live socket that keeps writing to a torn-down app.
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   ws?.close();
+  mapView = null;
   usePlanes.setState({ link: "offline", planes: new Map() });
 }

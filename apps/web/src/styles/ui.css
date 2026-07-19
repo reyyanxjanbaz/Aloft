@@ -214,3 +214,48 @@
   font-size: var(--t-small);
   line-height: 1.6;
 }
+
+/* ── Toast ────────────────────────────────────────────── */
+
+/*
+ * Transient confirmation, above the destination row. Self-dismisses via
+ * animationend so nothing has to hold a timer, and stays out of the way of
+ * the scope — it sits over the chrome, never the map centre.
+ */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--nav-h) + var(--safe-b) + var(--s-3));
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  max-width: min(92vw, 420px);
+  padding: var(--s-2) var(--s-4);
+  background: var(--panel);
+  border: 1px solid var(--phos);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--t-data-sm);
+  letter-spacing: 0.02em;
+  transform: translateX(-50%);
+  animation: toast-life 4.2s var(--ease) forwards;
+}
+
+@keyframes toast-life {
+  0% { opacity: 0; transform: translate(-50%, 8px); }
+  8%, 88% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    /* Still self-dismisses — animationend must fire for the toast to clear. */
+    animation: toast-life-still 4.2s steps(1, end) forwards;
+  }
+  @keyframes toast-life-still {
+    0%, 92% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+}

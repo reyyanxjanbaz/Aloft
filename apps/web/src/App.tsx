@@ -1,5 +1,4 @@
-import { useEffect, useRef } from "react";
-import { CAPTURE_RADIUS_KM } from "@aloft/shared";
+import { useEffect, useRef, useState } from "react";
 import { Shell } from "./components/Shell";
 import { HangarView } from "./features/hangar/HangarView";
 import { HuntView } from "./features/hunt/HuntView";
@@ -7,10 +6,11 @@ import { RadarView } from "./features/radar/RadarView";
 import { RevealView } from "./features/reveal/RevealView";
 import { SocialView } from "./features/social/SocialView";
 import { SystemView } from "./features/system/SystemView";
+import { flushPendingCatch } from "./lib/catchQueue";
 import { ensurePlayer } from "./lib/player";
 import { useGeolocation, type PlayerPosition } from "./lib/useGeolocation";
 import { isTab, useApp } from "./state/app";
-import { connectSky, disconnectSky, setSkyIdentity, updateView, usePlanes } from "./state/planes";
+import { connectSky, disconnectSky, setGpsPosition, setSkyIdentity, usePlanes } from "./state/planes";
 import { IconWarning, IconWorld } from "./ui/icons";
 
 /** Jumps to the scope and opens a contact — from a notification tap. */
@@ -23,6 +23,7 @@ export function App() {
   const { position, error } = useGeolocation();
   const view = useApp((s) => s.view);
   const connectedRef = useRef(false);
+  const [confirmed, setConfirmed] = useState(false);
 
   useEffect(() => {
     void ensurePlayer().then((p) => setSkyIdentity(p?.id, p?.token));
@@ -36,11 +37,31 @@ export function App() {
     if (!position) return;
     if (!connectedRef.current) {
       connectedRef.current = true;
-      connectSky({ lat: position.lat, lon: position.lon, viewRadiusKm: CAPTURE_RADIUS_KM * 4 });
+      connectSky({ lat: position.lat, lon: position.lon });
     } else {
-      updateView({ lat: position.lat, lon: position.lon, viewRadiusKm: CAPTURE_RADIUS_KM * 4 });
+      // Reports where the device is. While the scope is mounted the map owns
+      // the streamed view, so this no longer fights a deliberate pan.
+      setGpsPosition(position.lat, position.lon);
     }
   }, [position?.lat, position?.lon]);
+
+  // A capture that couldn't reach the tower is held on the device. Retry it
+  // at launch and whenever the network returns, so a lock the player earned
+  // offline still lands in their hangar.
+  useEffect(() => {
+    let alive = true;
+    const flush = () => {
+      void flushPendingCatch().then((outcome) => {
+        if (alive && outcome?.status === "caught") setConfirmed(true);
+      });
+    };
+    flush();
+    window.addEventListener("online", flush);
+    return () => {
+      alive = false;
+      window.removeEventListener("online", flush);
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -85,6 +106,7 @@ export function App() {
         entry={view.entry}
         isNew={view.isNew}
         firstSpotter={view.firstSpotter === true}
+        localSaveFailed={view.localSaveFailed === true}
         position={position}
       />
     );
@@ -94,6 +116,11 @@ export function App() {
   return (
     <Shell tab={tab}>
       <TabView tab={tab} position={position} />
+      {confirmed && (
+        <p className="toast" role="status" onAnimationEnd={() => setConfirmed(false)}>
+          Queued catch confirmed by the tower
+        </p>
+      )}
     </Shell>
   );
 }

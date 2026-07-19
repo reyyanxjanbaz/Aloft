@@ -3,7 +3,7 @@ import type { Rarity, ValidatedCatch } from "@aloft/shared";
 import { typeName } from "@aloft/shared";
 
 export interface HangarEntry {
-  /** One catch per airframe per flight per day: hex:callsign:yyyymmdd. */
+  /** One catch per airframe per local day: hex:yyyymmdd. */
   id: string;
   hex: string;
   callsign: string;
@@ -62,7 +62,10 @@ export function entryFromCatch(validated: ValidatedCatch): HangarEntry {
   const ac = validated.aircraft;
   const day = localDayKey(validated.caughtAt);
   return {
-    id: `${ac.hex}:${ac.callsign || "----"}:${day}`,
+    // Airframe + day only. The callsign used to be part of this key, but it
+    // is absent on some fixes and changes mid-flight on others, so one flight
+    // could be logged twice.
+    id: `${ac.hex.toLowerCase()}:${day}`,
     hex: ac.hex,
     callsign: ac.callsign,
     reg: ac.reg,
@@ -92,6 +95,33 @@ export async function saveCatch(entry: HangarEntry): Promise<{ isNew: boolean }>
   await tx.store.put(entry);
   await tx.done;
   return { isNew: !existing };
+}
+
+/**
+ * A capture the player earned but the tower never confirmed — offline, or a
+ * dropped request. Held so a successful lock is never silently thrown away;
+ * flushed on next launch or when the network returns.
+ */
+export interface PendingCatch {
+  hex: string;
+  lat: number;
+  lon: number;
+  ts: number;
+}
+
+export async function getPendingCatch(): Promise<PendingCatch | null> {
+  const database = await db();
+  return ((await database.get("meta", "pendingCatch")) as PendingCatch | undefined) ?? null;
+}
+
+export async function setPendingCatch(pending: PendingCatch): Promise<void> {
+  const database = await db();
+  await database.put("meta", pending, "pendingCatch");
+}
+
+export async function clearPendingCatch(): Promise<void> {
+  const database = await db();
+  await database.delete("meta", "pendingCatch");
 }
 
 export async function listCatches(): Promise<HangarEntry[]> {

@@ -51,7 +51,9 @@ export function normalizeReadsb(ac: ReadsbAircraft, now: number): AircraftState 
     lon: ac.lon,
     altFt,
     gsKt,
-    track: ac.track ?? 0,
+    // null, not 0: a defaulted 0 is indistinguishable from due north and
+    // sends trackless aircraft sailing northward under dead reckoning.
+    track: typeof ac.track === "number" ? ac.track : null,
     seenPosSec: ac.seen_pos ?? 0,
     ts: now,
   };

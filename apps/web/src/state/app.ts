@@ -8,7 +8,18 @@ export type Tab = "radar" | "hangar" | "social" | "system";
 export type View =
   | { name: Tab }
   | { name: "hunt"; hex: string }
-  | { name: "reveal"; entry: HangarEntry; isNew: boolean; firstSpotter?: boolean };
+  | {
+      name: "reveal";
+      entry: HangarEntry;
+      isNew: boolean;
+      firstSpotter?: boolean;
+      /**
+       * The tower recorded this catch but writing our own copy failed
+       * (storage full, private mode). The reveal still shows — the catch is
+       * real — with a note that it isn't in the local hangar.
+       */
+      localSaveFailed?: boolean;
+    };
 
 const TABS: Tab[] = ["radar", "hangar", "social", "system"];
 

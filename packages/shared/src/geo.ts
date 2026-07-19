@@ -66,13 +66,32 @@ export function angleDiffDeg(a: number, b: number): number {
   return d;
 }
 
+const WINDS = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+
+/** Nearest of the eight compass winds for a bearing — "look northwest". */
+export function compassWord(bearing: number): string {
+  const wrapped = ((bearing % 360) + 360) % 360;
+  return WINDS[Math.round(wrapped / 45) % 8] ?? "somewhere";
+}
+
 /**
  * Dead-reckon an aircraft position forward by `dtSec` along its track at its ground speed.
  * Returns [lat, lon].
+ *
+ * `track` is null when the aircraft isn't broadcasting one. Projecting those
+ * along a defaulted 0° sent them due north at cruise speed, which misplaced
+ * the marker, the hunt reticle, and the in-range test all at once — so an
+ * unknown track means no projection at all.
  */
-export function deadReckon(lat: number, lon: number, track: number, gsKt: number, dtSec: number): [number, number] {
+export function deadReckon(
+  lat: number,
+  lon: number,
+  track: number | null,
+  gsKt: number,
+  dtSec: number
+): [number, number] {
   // `!(gsKt > 0)` also rejects NaN and negative speeds (a corrupted reading
   // would otherwise project the aircraft backward along its track).
-  if (!(gsKt > 0) || dtSec <= 0) return [lat, lon];
+  if (track === null || !(gsKt > 0) || dtSec <= 0) return [lat, lon];
   return destinationPoint(lat, lon, track, gsKt * KT_TO_MS * dtSec);
 }

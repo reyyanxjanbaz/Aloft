@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { deriveAim, screenAngle, type OrientationSample } from "./aimSensor";
 
 export interface Aim {
   /** Compass heading the camera points at, degrees from true north. */
@@ -24,6 +25,9 @@ export function useOrientation() {
   const [mode, setMode] = useState<AimMode>("waiting");
   const modeRef = useRef<AimMode>("waiting");
   const gotSensorRef = useRef(false);
+  /** True once the player has actually dragged, which pins drag mode. */
+  const userDraggedRef = useRef(false);
+  const angleRef = useRef(0);
 
   const setModeBoth = (m: AimMode) => {
     modeRef.current = m;
@@ -31,34 +35,47 @@ export function useOrientation() {
   };
 
   useEffect(() => {
+    angleRef.current = screenAngle();
+    const onRotate = () => {
+      angleRef.current = screenAngle();
+    };
+    window.screen?.orientation?.addEventListener?.("change", onRotate);
+    window.addEventListener("orientationchange", onRotate);
+
     const handler = (e: DeviceOrientationEvent) => {
       const ios = e as IOSOrientationEvent;
-      let heading: number | null = null;
-      if (typeof ios.webkitCompassHeading === "number" && !Number.isNaN(ios.webkitCompassHeading)) {
-        heading = ios.webkitCompassHeading;
-      } else if (e.alpha !== null && (e.absolute || "ondeviceorientationabsolute" in window === false)) {
-        heading = (360 - e.alpha) % 360;
-      }
-      const pitch = e.beta !== null ? Math.max(-90, Math.min(90, e.beta - 90)) : null;
+      const sample: OrientationSample = {
+        alpha: e.alpha,
+        beta: e.beta,
+        gamma: e.gamma,
+        absolute: e.absolute,
+        webkitCompassHeading: ios.webkitCompassHeading,
+      };
+      const solution = deriveAim(sample, angleRef.current);
+      if (!solution) return;
 
-      // Once the player has fallen back to (or chosen) drag mode, a
-      // late-arriving real sensor reading must not silently reclaim control —
-      // that used to yank the reticle out from under an active manual drag
-      // the instant the compass finally produced its first heading.
-      if (heading !== null && modeRef.current !== "drag") {
-        gotSensorRef.current = true;
-        if (modeRef.current !== "sensor") setModeBoth("sensor");
-        aimRef.current.heading = heading;
-      }
-      if (pitch !== null && modeRef.current !== "drag") {
-        aimRef.current.pitch = pitch;
-      }
+      gotSensorRef.current = true;
+
+      // A late-arriving first reading may reclaim aim from the fallback, but
+      // only if the player hasn't actually dragged. The old guard keyed on
+      // the mode alone, so a phone whose compass merely warmed up slowly was
+      // locked into dragging for the rest of the session; keying on real
+      // input keeps an active manual drag safe without punishing a cold
+      // sensor.
+      if (modeRef.current === "drag" && userDraggedRef.current) return;
+      if (modeRef.current !== "sensor") setModeBoth("sensor");
+      aimRef.current.heading = solution.heading;
+      aimRef.current.pitch = solution.pitch;
     };
 
     const eventName =
       "ondeviceorientationabsolute" in window ? "deviceorientationabsolute" : "deviceorientation";
     window.addEventListener(eventName as "deviceorientation", handler, true);
-    return () => window.removeEventListener(eventName as "deviceorientation", handler, true);
+    return () => {
+      window.removeEventListener(eventName as "deviceorientation", handler, true);
+      window.screen?.orientation?.removeEventListener?.("change", onRotate);
+      window.removeEventListener("orientationchange", onRotate);
+    };
   }, []);
 
   /** Call from a user tap. Requests iOS permission, then waits for real data. */
@@ -85,6 +102,7 @@ export function useOrientation() {
 
   const dragBy = useCallback((dxPx: number, dyPx: number) => {
     if (modeRef.current !== "drag") return;
+    userDraggedRef.current = true;
     aimRef.current.heading = (aimRef.current.heading + dxPx * 0.35 + 360) % 360;
     aimRef.current.pitch = Math.max(-20, Math.min(90, aimRef.current.pitch + dyPx * 0.25));
   }, []);
