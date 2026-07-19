@@ -58,6 +58,20 @@ describeIfDb("PushStore", () => {
     });
   });
 
+  it("drops ping history older than the dedupe window", async () => {
+    await withCleanDb(async () => {
+      const now = Date.now();
+      await store.upsert(sub);
+      // Three hours ago — well outside the 2h dedupe window, so it can never
+      // suppress a future ping and must not be kept.
+      await store.markPinged(sub.subscription.endpoint, "stale1", now - 3 * 60 * 60_000);
+      await store.markPinged(sub.subscription.endpoint, "fresh1", now);
+
+      const [row] = await store.all();
+      expect(row?.pingedHexes).toEqual({ fresh1: now });
+    });
+  });
+
   it("removes a dead subscription", async () => {
     await withCleanDb(async () => {
       await store.upsert(sub);

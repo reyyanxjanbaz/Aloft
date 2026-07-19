@@ -1,5 +1,6 @@
 import type { PushSubscription } from "web-push";
 import { sql } from "../db";
+import { PER_HEX_DEDUPE_MS } from "./geofence";
 
 export interface StoredSub {
   subscription: PushSubscription;
@@ -70,14 +71,21 @@ export class PushStore {
    * only after the push actually goes out, so a transient send failure
    * doesn't silently cost the player their next eligible window.
    *
-   * `||` merges into the existing jsonb object rather than replacing it, so
-   * per-airframe dedupe history accumulates across pings.
+   * Entries older than the dedupe window are dropped in the same statement.
+   * They can never suppress a future ping, so keeping them only grew the
+   * jsonb without bound — one key per distinct airframe, forever — and every
+   * geofence tick reads this column for every subscription.
    */
   async markPinged(endpoint: string, hex: string, at: number): Promise<void> {
+    const keepAfter = at - PER_HEX_DEDUPE_MS;
     await sql`
       update push_subscriptions
       set last_ping_at = ${new Date(at)},
-          pinged_hexes = coalesce(pinged_hexes, '{}'::jsonb) || ${sql.json({ [hex]: at })}
+          pinged_hexes = (
+            select coalesce(jsonb_object_agg(key, value), '{}'::jsonb)
+            from jsonb_each(coalesce(pinged_hexes, '{}'::jsonb))
+            where (value #>> '{}')::numeric > ${keepAfter}
+          ) || ${sql.json({ [hex]: at })}
       where endpoint = ${endpoint}
     `;
   }

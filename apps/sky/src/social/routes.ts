@@ -1,45 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import type { SharedCatch } from "@aloft/shared";
+import { requireAuth } from "../auth";
 import type { SocialStore } from "./store";
 
 const WEEK_MS = 7 * 86_400_000;
 
-/** Player identity comes from the `x-player-id` header (pre-auth MVP). */
-function playerId(headers: Record<string, unknown>): string | null {
-  const id = headers["x-player-id"];
-  return typeof id === "string" && id.length > 0 ? id : null;
-}
-
-function playerToken(headers: Record<string, unknown>): string | undefined {
-  const token = headers["x-player-token"];
-  return typeof token === "string" && token.length > 0 ? token : undefined;
-}
-
 /**
- * For routes that mutate a player's own data. Requires both an id and its
- * matching bearer token — closes the gap where knowing someone's id (visible
- * to friends via /friends, /activity) was previously enough to act as them.
+ * Every route here is authenticated, reads included. Player ids are handed
+ * out in /friends and /activity payloads, so an id on its own is not a
+ * secret and never proved identity — requiring the bearer token on reads is
+ * what actually keeps a hangar private to friends.
  */
-function requireAuth(
-  req: { headers: Record<string, unknown> },
-  reply: { code(n: number): { send(body: unknown): unknown } },
-  social: SocialStore
-): string | null {
-  const id = playerId(req.headers);
-  if (!id) {
-    reply.code(401).send({ ok: false, reason: "missing x-player-id" });
-    return null;
-  }
-  if (!social.verifyToken(id, playerToken(req.headers))) {
-    reply.code(401).send({ ok: false, reason: "invalid or missing player token" });
-    return null;
-  }
-  return id;
-}
-
 export function registerSocialRoutes(app: FastifyInstance, social: SocialStore): void {
   app.post<{ Body: { name?: string; id?: string; token?: string } }>(
     "/player/register",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
     async (req, reply) => {
       const { name, id, token } = req.body ?? {};
       if (typeof name !== "string") return reply.code(400).send({ ok: false, reason: "expected {name}" });
@@ -49,8 +24,9 @@ export function registerSocialRoutes(app: FastifyInstance, social: SocialStore):
   );
 
   app.get("/player/me", async (req, reply) => {
-    const id = playerId(req.headers as never);
-    const player = id ? await social.getProfile(id) : undefined;
+    const id = requireAuth(req, reply, social);
+    if (!id) return;
+    const player = await social.getProfile(id);
     if (!player) return reply.code(404).send({ ok: false, reason: "unknown player" });
     return { ok: true, player, stats: await social.stats(player.id) };
   });
@@ -72,27 +48,27 @@ export function registerSocialRoutes(app: FastifyInstance, social: SocialStore):
   });
 
   app.get("/friends", async (req, reply) => {
-    const id = playerId(req.headers as never);
-    if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
+    const id = requireAuth(req, reply, social);
+    if (!id) return;
     return { ok: true, friends: await social.friends(id) };
   });
 
   app.get<{ Params: { targetId: string } }>("/player/:targetId/hangar", async (req, reply) => {
-    const id = playerId(req.headers as never);
-    if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
+    const id = requireAuth(req, reply, social);
+    if (!id) return;
     const result = await social.hangarOf(id, req.params.targetId);
     return reply.code(result.ok ? 200 : 403).send(result);
   });
 
   app.get("/leaderboard", async (req, reply) => {
-    const id = playerId(req.headers as never);
-    if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
+    const id = requireAuth(req, reply, social);
+    if (!id) return;
     return { ok: true, rows: await social.leaderboard(id, Date.now() - WEEK_MS) };
   });
 
   app.get("/activity", async (req, reply) => {
-    const id = playerId(req.headers as never);
-    if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
+    const id = requireAuth(req, reply, social);
+    if (!id) return;
     return { ok: true, items: await social.activity(id) };
   });
 }

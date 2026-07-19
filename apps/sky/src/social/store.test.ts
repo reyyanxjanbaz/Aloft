@@ -1,7 +1,18 @@
 import { beforeEach, expect, it } from "vitest";
 import type { SharedCatch } from "@aloft/shared";
-import { SocialStore } from "./store";
+import { randomCode, SocialStore } from "./store";
+import { describe, it as baseIt } from "vitest";
 import { describeIfDb, withCleanDb } from "../testing/db";
+
+describe("randomCode", () => {
+  baseIt("always satisfies the players.code CHECK constraint", () => {
+    // The schema excludes 0/1/I/O so codes can be read aloud. A generator
+    // that can emit them turns the collision-fallback path into a 500.
+    for (let i = 0; i < 1000; i++) {
+      expect(randomCode()).toMatch(/^[A-Z2-9]{6}$/);
+    }
+  });
+});
 
 function catchEntry(over: Partial<Omit<SharedCatch, "firstSpotter">> = {}): Omit<SharedCatch, "firstSpotter"> {
   return {

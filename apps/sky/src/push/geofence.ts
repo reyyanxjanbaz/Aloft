@@ -14,7 +14,7 @@ import type { PushStore } from "./store";
 const CHECK_MS = 60_000;
 /** Ping budget: pings must stay exciting, not spammy. */
 const PER_SUB_COOLDOWN_MS = 30 * 60_000;
-const PER_HEX_DEDUPE_MS = 2 * 60 * 60_000;
+export const PER_HEX_DEDUPE_MS = 2 * 60 * 60_000;
 const MIN_RARITY: Rarity = "uncommon";
 const MIN_ALT_FT = 500; // ignore taxiing/parked aircraft
 

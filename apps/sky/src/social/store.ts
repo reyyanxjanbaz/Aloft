@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   RARITY_ORDER,
   streakDays,
@@ -31,7 +30,8 @@ export function rarityPoints(rarity: string): number {
   return idx >= 0 ? (idx + 1) ** 2 : 0;
 }
 
-function randomCode(): string {
+/** Exported for the test that asserts every draw satisfies the players.code CHECK. */
+export function randomCode(): string {
   return Array.from(
     { length: 6 },
     () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
@@ -148,7 +148,11 @@ export class SocialStore {
     }
 
     for (let attempt = 0; attempt < 20; attempt++) {
-      const code = attempt < 15 ? randomCode() : randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
+      // Always drawn from CODE_ALPHABET. The previous fallback sliced a UUID,
+      // which emits hex digits 0 and 1 — both excluded by the players.code
+      // CHECK — so the "guaranteed unique" path raised a check violation
+      // (23514, not retried below) and 500'd instead of recovering.
+      const code = randomCode();
       try {
         const [created] = id
           ? await sql<{ id: string; name: string; code: string; token: string }[]>`

@@ -14,6 +14,8 @@ import type { FlightProvider } from "./providers/types";
 
 const CELL_DEG = 0.5; // ~55 km of latitude per cell
 const POLL_MS = 3000;
+/** How long one cell's on-demand catch-validation poll is reused. */
+const ON_DEMAND_POLL_TTL_MS = POLL_MS * 4;
 // Half-diagonal of a 0.5° cell (~39 km at the equator) plus the max player radius —
 // one upstream request per cell covers every subscriber assigned to it.
 const CELL_SLACK_KM = 40;
@@ -90,9 +92,38 @@ export class SkyHub {
   private history = new Map<string, AirframeHistory>();
   /** playerId → last position we saw them subscribe from. */
   private playerPositions = new Map<string, PlayerPosition>();
+  /** cellKey → in-flight or recent on-demand catch-validation poll. */
+  private onDemandPolls = new Map<string, { at: number; promise: Promise<void> }>();
 
   constructor(private provider: FlightProvider) {
     setInterval(() => this.pruneHistory(), 60_000).unref?.();
+  }
+
+  /**
+   * One upstream fetch per cell per ON_DEMAND_POLL_TTL_MS, shared by every
+   * caller that lands in the same cell. A burst of catches in one area — a
+   * group of players at an airfield, or a client retrying — collapses into a
+   * single request rather than one each.
+   */
+  private onDemandPoll(lat: number, lon: number): Promise<void> {
+    const key = cellKey(lat, lon);
+    const existing = this.onDemandPolls.get(key);
+    if (existing && Date.now() - existing.at < ON_DEMAND_POLL_TTL_MS) return existing.promise;
+
+    const promise = this.provider
+      .getAircraftNear(lat, lon, MAX_VIEW_RADIUS_KM / NM_TO_KM)
+      .then((aircraft) => {
+        this.recordHistory(aircraft);
+      })
+      .catch((err) => {
+        // A failed poll must not be cached as a success, or the next caller
+        // in this cell would silently skip its own attempt.
+        this.onDemandPolls.delete(key);
+        console.warn("[hub] on-demand poll for catch validation failed:", err);
+      });
+
+    this.onDemandPolls.set(key, { at: Date.now(), promise });
+    return promise;
   }
 
   /**
@@ -109,21 +140,23 @@ export class SkyHub {
     lat: number,
     lon: number,
     ts: number,
-    claimingPlayerId?: string
+    claimingPlayerId?: string,
+    opts: { allowOnDemandPoll?: boolean } = {}
   ): Promise<CatchResponse> {
     let entry = this.history.get(hex.toLowerCase());
-    if (!entry) {
+    if (!entry && opts.allowOnDemandPoll) {
       // Every deploy starts a fresh instance with an empty history, which
       // would reject legitimate catches until the first poll of that cell
       // lands. Poll the claimed position once so a catch made seconds after
       // a restart still counts.
-      try {
-        const aircraft = await this.provider.getAircraftNear(lat, lon, MAX_VIEW_RADIUS_KM / NM_TO_KM);
-        this.recordHistory(aircraft);
-        entry = this.history.get(hex.toLowerCase());
-      } catch (err) {
-        console.warn("[hub] on-demand poll for catch validation failed:", err);
-      }
+      //
+      // Gated on the caller being an authenticated player, and coalesced per
+      // cell: unauthenticated callers could otherwise drive one ~250 km
+      // upstream fetch per request just by submitting random hexes, which is
+      // an amplification vector against the ADS-B feeds we depend on and a
+      // fast route to having this server's IP banned.
+      await this.onDemandPoll(lat, lon);
+      entry = this.history.get(hex.toLowerCase());
     }
     if (!entry) return { ok: false, reason: "unknown aircraft — not seen on this radar" };
 
@@ -233,6 +266,14 @@ export class SkyHub {
         lastAircraft: [],
       };
       this.cells.set(key, cell);
+      // Register before starting the poll loop: startPolling fires its first
+      // poll synchronously, and that poll sizes its radius from the widest
+      // subscriber viewport. Registering afterwards meant the first fetch of a
+      // brand-new cell always saw zero subscribers and fell back to
+      // CELL_SLACK_KM alone, so a client with a wide viewport got a scope
+      // truncated to 40 km until the next tick.
+      cell.subscribers.set(sub.id, sub);
+      this.subscriberCells.set(sub.id, key);
       this.startPolling(cell);
     }
     cell.subscribers.set(sub.id, sub);
