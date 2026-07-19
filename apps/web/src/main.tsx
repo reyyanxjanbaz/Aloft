@@ -12,6 +12,9 @@ import "./styles/boot.css";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { UpdateToast } from "./components/UpdateToast";
+import { registerServiceWorker } from "./lib/swUpdate";
+
+registerServiceWorker();
 
 /** Last line of defence: a render crash shows a readout, not a blank screen. */
 const FAULT = (

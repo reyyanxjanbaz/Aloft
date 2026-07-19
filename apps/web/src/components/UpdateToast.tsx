@@ -1,47 +1,21 @@
-import { useEffect, useState } from "react";
-import { registerSW } from "virtual:pwa-register";
+import { reloadForUpdate, useUpdate } from "../lib/swUpdate";
 import { IconRefresh } from "../ui/icons";
 
 /**
- * Offers a new build rather than swapping under the player's feet.
- *
- * Installed PWAs used to run a version behind indefinitely: the old worker
- * served the precached index.html at launch, and nothing ever told the page
- * a newer worker was waiting. Accepting here activates the waiting worker
- * and reloads once it takes control, so the swap is atomic.
+ * Only appears when a new build arrived mid-capture, where reloading
+ * automatically would discard a lock the player is holding. Everywhere else
+ * the update applies itself.
  */
 export function UpdateToast() {
-  const [ready, setReady] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [update, setUpdate] = useState<(() => Promise<void>) | null>(null);
-
-  useEffect(() => {
-    // A capture in progress must never be interrupted by a reload, so the
-    // reload is only ever triggered by the player's own tap below.
-    const updateSW = registerSW({
-      immediate: true,
-      onNeedRefresh() {
-        setUpdate(() => () => updateSW(true));
-        setReady(true);
-      },
-    });
-  }, []);
-
+  const ready = useUpdate((s) => s.ready);
   if (!ready) return null;
 
   return (
     <div className="toast toast--action" role="status">
       <span>New build ready</span>
-      <button
-        className="toast__action"
-        disabled={applying}
-        onClick={() => {
-          setApplying(true);
-          void update?.();
-        }}
-      >
+      <button className="toast__action" onClick={reloadForUpdate}>
         <IconRefresh size={14} weight="bold" />
-        {applying ? "Reloading" : "Reload"}
+        Reload
       </button>
     </div>
   );

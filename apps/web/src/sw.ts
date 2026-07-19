@@ -18,18 +18,20 @@ declare const self: {
 };
 
 /**
- * Activation is deliberately NOT automatic.
+ * This worker MUST take over as soon as it installs.
  *
- * Calling skipWaiting() here swapped the service worker mid-session while a
- * page was still running the previous build, and cleanupOutdatedCaches()
- * then deleted the precache that page's lazy chunks came from — so a later
- * dynamic import could 404. Worse, an installed PWA launched from the old
- * worker got the *precached* index.html and ran a version behind for the
- * whole session, which is exactly how a shipped fix appeared not to deploy.
+ * A worker that waits for the page to invite it in cannot ever be invited:
+ * the previous build's worker keeps answering navigations from its own
+ * precached index.html, so the new bundle — and any in-app prompt inside it
+ * — is never fetched. Every future deploy is then invisible, and no redeploy
+ * can break the loop. Do not "improve" this into a waiting worker.
  *
- * The page now asks (see UpdateToast) and sends SKIP_WAITING when the player
- * accepts, so the swap and the reload happen together.
+ * Taking over silently would leave the running page on the old bundle, so
+ * lib/swUpdate.ts reloads on controllerchange to finish the job.
  */
+self.skipWaiting();
+
+// Kept so a page can still ask explicitly; harmless alongside the above.
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
