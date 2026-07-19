@@ -43,16 +43,16 @@ export function registerSocialRoutes(app: FastifyInstance, social: SocialStore):
     async (req, reply) => {
       const { name, id, token } = req.body ?? {};
       if (typeof name !== "string") return reply.code(400).send({ ok: false, reason: "expected {name}" });
-      const result = social.register(name, id, token);
+      const result = await social.register(name, id, token);
       return reply.code(result.ok ? 200 : 401).send(result);
     }
   );
 
   app.get("/player/me", async (req, reply) => {
     const id = playerId(req.headers as never);
-    const player = id ? social.get(id) : undefined;
+    const player = id ? await social.getProfile(id) : undefined;
     if (!player) return reply.code(404).send({ ok: false, reason: "unknown player" });
-    return { ok: true, player: social.profile(player), stats: social.stats(player) };
+    return { ok: true, player, stats: await social.stats(player.id) };
   });
 
   app.post<{ Body: { code?: string } }>("/friends/add", async (req, reply) => {
@@ -60,40 +60,40 @@ export function registerSocialRoutes(app: FastifyInstance, social: SocialStore):
     if (!id) return;
     const code = req.body?.code;
     if (typeof code !== "string") return reply.code(400).send({ ok: false, reason: "expected {code}" });
-    const result = social.addFriendByCode(id, code);
+    const result = await social.addFriendByCode(id, code);
     return reply.code(result.ok ? 200 : 422).send(result);
   });
 
   app.post<{ Body: { friendId?: string } }>("/friends/remove", async (req, reply) => {
     const id = requireAuth(req, reply, social);
     if (!id) return;
-    if (req.body?.friendId) social.removeFriend(id, req.body.friendId);
+    if (req.body?.friendId) await social.removeFriend(id, req.body.friendId);
     return { ok: true };
   });
 
   app.get("/friends", async (req, reply) => {
     const id = playerId(req.headers as never);
     if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
-    return { ok: true, friends: social.friends(id) };
+    return { ok: true, friends: await social.friends(id) };
   });
 
   app.get<{ Params: { targetId: string } }>("/player/:targetId/hangar", async (req, reply) => {
     const id = playerId(req.headers as never);
     if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
-    const result = social.hangarOf(id, req.params.targetId);
+    const result = await social.hangarOf(id, req.params.targetId);
     return reply.code(result.ok ? 200 : 403).send(result);
   });
 
   app.get("/leaderboard", async (req, reply) => {
     const id = playerId(req.headers as never);
     if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
-    return { ok: true, rows: social.leaderboard(id, Date.now() - WEEK_MS) };
+    return { ok: true, rows: await social.leaderboard(id, Date.now() - WEEK_MS) };
   });
 
   app.get("/activity", async (req, reply) => {
     const id = playerId(req.headers as never);
     if (!id) return reply.code(401).send({ ok: false, reason: "missing x-player-id" });
-    return { ok: true, items: social.activity(id) };
+    return { ok: true, items: await social.activity(id) };
   });
 }
 

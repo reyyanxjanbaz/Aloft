@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
 import { CAPTURE_RADIUS_KM, typeName, type CatchRequest, type ClientMessage } from "@aloft/shared";
+import { dbReady, hasDb, sql, waitForDb } from "./db";
 import { SkyHub } from "./hub";
 import { AdsbLolProvider } from "./providers/adsbLol";
 import { AirplanesLiveProvider } from "./providers/airplanesLive";
@@ -14,6 +15,13 @@ import { SocialStore } from "./social/store";
 
 const PORT = Number(process.env.PORT ?? 8787);
 
+// A missing connection string is a configuration error, not an outage — fail
+// immediately and clearly rather than retrying a placeholder forever.
+if (!hasDb) {
+  console.error("[sky] neither DATABASE_URL nor POSTGRES_URL is set");
+  process.exit(1);
+}
+
 const provider = new FailoverProvider([new AdsbLolProvider(), new AirplanesLiveProvider()]);
 const hub = new SkyHub(provider);
 const { publicKey: vapidPublicKey } = initVapid();
@@ -25,7 +33,27 @@ const app = Fastify({ logger: { level: "info" } });
 await app.register(cors, { origin: true });
 await app.register(websocket);
 
-app.get("/health", async () => ({ ok: true, ...hub.stats, pushSubs: pushStore.size }));
+/**
+ * Radar, hunting and catch *validation* run off the hub and must keep
+ * working through a database outage; only the routes that actually read or
+ * write Postgres degrade. /catch is deliberately absent — validation still
+ * succeeds, and attribution is already gated behind social.knows(), which
+ * is false until the token cache hydrates.
+ */
+const DB_ROUTES = ["/player", "/friends", "/leaderboard", "/activity", "/push/subscribe", "/push/unsubscribe"];
+app.addHook("onRequest", async (req, reply) => {
+  if (dbReady()) return;
+  if (DB_ROUTES.some((prefix) => req.url.startsWith(prefix))) {
+    return reply.code(503).send({ ok: false, reason: "database unavailable — try again shortly" });
+  }
+});
+
+app.get("/health", async () => ({
+  ok: true,
+  ...hub.stats,
+  db: dbReady() ? "up" : "down",
+  pushSubs: dbReady() ? await pushStore.count() : null,
+}));
 
 app.get("/push/key", async () => ({ key: vapidPublicKey }));
 
@@ -48,7 +76,7 @@ app.post<{ Body: SubscribeBody }>("/push/subscribe", async (req, reply) => {
   ) {
     return reply.code(400).send({ ok: false, reason: "expected {subscription, lat, lon}" });
   }
-  pushStore.upsert({
+  await pushStore.upsert({
     subscription: subscription as never,
     lat: lat!,
     lon: lon!,
@@ -58,7 +86,7 @@ app.post<{ Body: SubscribeBody }>("/push/subscribe", async (req, reply) => {
 });
 
 app.post<{ Body: { endpoint?: string } }>("/push/unsubscribe", async (req) => {
-  if (req.body?.endpoint) pushStore.remove(req.body.endpoint);
+  if (req.body?.endpoint) await pushStore.remove(req.body.endpoint);
   return { ok: true };
 });
 
@@ -107,11 +135,11 @@ app.post<{ Body: CatchRequest }>("/catch", async (req, reply) => {
   if (!result.ok) return reply.code(422).send(result);
 
   // Record it against the player so friends' hangars and first-spotter work.
-  if (playerId && social.get(playerId)) {
+  if (playerId && social.knows(playerId)) {
     const ac = result.catch.aircraft;
     const day = new Date(result.catch.caughtAt).toISOString().slice(0, 10).replaceAll("-", "");
     const catchId = `${ac.hex}:${ac.callsign || "----"}:${day}`;
-    const { firstSpotter } = social.recordCatch(
+    const { firstSpotter } = await social.recordCatch(
       playerId,
       toSharedCatch(catchId, ac, typeName(ac.typeIcao), result.catch.rarity, result.catch.caughtAt, result.catch.distanceKm)
     );
@@ -169,16 +197,21 @@ app.register(async (instance) => {
   });
 });
 
-app.listen({ port: PORT, host: "0.0.0.0" }).then(() => {
-  console.log(`[sky] aloft-sky listening on :${PORT}`);
-});
+await app.listen({ port: PORT, host: "0.0.0.0" });
+console.log(`[sky] aloft-sky listening on :${PORT}`);
 
-// The file stores debounce their writes (see SocialStore/PushStore.persist);
-// without this, a mutation just before a deploy/restart could be lost.
+// Radar and catch validation depend on the hub, not the database, so the
+// service serves traffic immediately and connects to Postgres behind it.
+// Database-backed routes answer 503 until the token cache is hydrated.
+void (async () => {
+  await waitForDb();
+  await social.hydrateTokens();
+})();
+
 async function shutdown(signal: string): Promise<void> {
-  console.log(`[sky] ${signal} received, flushing stores before exit`);
-  await Promise.allSettled([social.flush(), pushStore.flush()]);
+  console.log(`[sky] ${signal} received, closing`);
   await app.close();
+  await sql.end({ timeout: 5 });
   process.exit(0);
 }
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
