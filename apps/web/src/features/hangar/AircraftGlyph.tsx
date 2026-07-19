@@ -5,7 +5,7 @@ import { familyOf } from "@aloft/shared";
  * a jumbo reads as a jumbo at thumbnail size — the old cards were four lines of
  * text with nothing to recognise.
  */
-const SHAPES: Record<ReturnType<typeof familyOf>, string> = {
+export const GLYPH_SHAPES: Record<ReturnType<typeof familyOf>, string> = {
   // Long fuselage, four engine marks, broad swept wing.
   quad: "M32 3 L34 10 L34 22 L58 34 L58 39 L34 32 L34 46 L39 52 L39 56 L32 53 L25 56 L25 52 L30 46 L30 32 L6 39 L6 34 L30 22 L30 10 Z",
   widebody: "M32 4 L34 11 L34 23 L56 34 L56 39 L34 32 L34 45 L38 51 L38 55 L32 52 L26 55 L26 51 L30 45 L30 32 L8 39 L8 34 L30 23 L30 11 Z",
@@ -18,7 +18,7 @@ const SHAPES: Record<ReturnType<typeof familyOf>, string> = {
 export function AircraftGlyph({ typeIcao }: { typeIcao?: string }) {
   return (
     <svg className="glyph" viewBox="0 0 64 60" aria-hidden="true">
-      <path d={SHAPES[familyOf(typeIcao)]} />
+      <path d={GLYPH_SHAPES[familyOf(typeIcao)]} />
     </svg>
   );
 }

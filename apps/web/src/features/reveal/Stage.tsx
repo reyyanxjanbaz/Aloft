@@ -1,5 +1,5 @@
-import { Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Suspense, useEffect, type MutableRefObject } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { Bounds, ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { AircraftModel } from "./AircraftModel";
@@ -11,14 +11,46 @@ import { AircraftModel } from "./AircraftModel";
  * paint plus a real contact shadow is what makes the aircraft read as an
  * object rather than a diagram.
  */
+/**
+ * Hands the parent a function that grabs the current frame.
+ *
+ * The canvas is created without preserveDrawingBuffer, so its buffer is
+ * cleared after compositing — reading it later gives a blank image. Drawing
+ * and reading inside the same task is what makes this work without paying
+ * the memory cost of that flag for every frame.
+ */
+function SnapshotBridge({ snapshotRef }: { snapshotRef: SnapshotRef }) {
+  const { gl, scene, camera } = useThree();
+
+  useEffect(() => {
+    snapshotRef.current = () => {
+      try {
+        gl.render(scene, camera);
+        return gl.domElement.toDataURL("image/png");
+      } catch {
+        return null; // context lost, or a tainted canvas
+      }
+    };
+    return () => {
+      snapshotRef.current = null;
+    };
+  }, [gl, scene, camera, snapshotRef]);
+
+  return null;
+}
+
+export type SnapshotRef = MutableRefObject<(() => string | null) | null>;
+
 export function Stage({
   typeIcao,
   callsign,
   interactive = true,
+  snapshotRef,
 }: {
   typeIcao?: string;
   callsign: string;
   interactive?: boolean;
+  snapshotRef?: SnapshotRef;
 }) {
   return (
     /* A three-quarter view from above: the planform fills a portrait frame far
@@ -30,6 +62,7 @@ export function Stage({
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
     >
       <color attach="background" args={["#080d0b"]} />
+      {snapshotRef && <SnapshotBridge snapshotRef={snapshotRef} />}
 
       <Suspense fallback={null}>
         {/*

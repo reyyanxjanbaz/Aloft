@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements } from "@aloft/shared";
 import { lookupRoute, type FlightRoute } from "../../lib/adsbdb";
@@ -10,6 +10,7 @@ import { AchievementIcon } from "../../ui/AchievementIcon";
 import { IconBell, IconCheck, IconMedal, IconStar, IconWarning } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
 import { getSeenAchievements, listCatches, setSeenAchievements, type HangarEntry } from "../hangar/db";
+import { ShareCardButton } from "../share/ShareCardButton";
 import { Stage } from "./Stage";
 import "./reveal.css";
 
@@ -30,6 +31,9 @@ export function RevealView({
   position: PlayerPosition;
 }) {
   const go = useApp((s) => s.go);
+  // Filled by the stage; lets the share card use the actual rendered model
+  // rather than a generic silhouette.
+  const snapshotRef = useRef<(() => string | null) | null>(null);
   const [route, setRoute] = useState<FlightRoute | null>(null);
   const [unlocked, setUnlocked] = useState<string[]>([]);
   // From the real subscription, not from Notification.permission — permission
@@ -90,7 +94,7 @@ export function RevealView({
   return (
     <div className="reveal" style={{ ["--rarity" as string]: `var(--rarity-${entry.rarity})` }}>
       <div className="reveal__stage">
-        <Stage typeIcao={entry.typeIcao} callsign={entry.callsign} />
+        <Stage typeIcao={entry.typeIcao} callsign={entry.callsign} snapshotRef={snapshotRef} />
         <motion.div
           className="reveal__badge"
           initial={{ opacity: 0, y: -8 }}
@@ -209,6 +213,7 @@ export function RevealView({
         )}
 
         <div className="reveal__actions">
+          <ShareCardButton entry={entry} firstSpotter={firstSpotter} snapshotRef={snapshotRef} />
           <button className="btn btn--primary" onClick={() => go({ name: "hangar" })}>
             Add to hangar
           </button>

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements, RARITY_ORDER, streakDays } from "@aloft/shared";
 import { AchievementIcon } from "../../ui/AchievementIcon";
 import { IconClose, IconStreak } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
 import { Stage } from "../reveal/Stage";
+import { ShareCardButton } from "../share/ShareCardButton";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { AircraftGlyph } from "./AircraftGlyph";
 import { listCatches, type HangarEntry } from "./db";
@@ -19,6 +20,7 @@ export function HangarView({ position }: { position: PlayerPosition }) {
   const [selected, setSelected] = useState<HangarEntry | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [unreadable, setUnreadable] = useState(false);
+  const snapshotRef = useRef<(() => string | null) | null>(null);
 
   useEffect(() => {
     // Without this catch, a storage failure (private mode, a blocked upgrade,
@@ -170,7 +172,7 @@ export function HangarView({ position }: { position: PlayerPosition }) {
       {selected && (
         <div className="viewer" role="dialog" aria-label={selected.typeLabel}>
           <div className="viewer__stage">
-            <Stage typeIcao={selected.typeIcao} callsign={selected.callsign} />
+            <Stage typeIcao={selected.typeIcao} callsign={selected.callsign} snapshotRef={snapshotRef} />
           </div>
           <div className="viewer__bar">
             <div className="viewer__ident">
@@ -181,6 +183,12 @@ export function HangarView({ position }: { position: PlayerPosition }) {
               </span>
               <LiveStatus hex={selected.hex} position={position} />
             </div>
+            <ShareCardButton
+              entry={selected}
+              firstSpotter={false}
+              snapshotRef={snapshotRef}
+              className="btn btn--quiet"
+            />
             <button className="icon-btn" onClick={() => setSelected(null)} aria-label="Close viewer">
               <IconClose size={20} weight="bold" />
             </button>

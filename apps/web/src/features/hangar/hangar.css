@@ -237,3 +237,8 @@
 .live--pending .live__text {
   color: var(--ink-3);
 }
+
+/* Room for the share control beside the close button in the viewer. */
+.viewer__bar {
+  gap: var(--s-3);
+}

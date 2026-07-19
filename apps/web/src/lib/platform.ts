@@ -115,3 +115,44 @@ export async function registerNativePush(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Shares an image file, falling back to a download.
+ *
+ * Web Share level 2 (files) is the good path on both mobile platforms and
+ * puts the card straight into the OS sheet. Desktop browsers mostly can't,
+ * so they save it instead — still a file the player can post.
+ */
+export async function shareFile(
+  file: File,
+  title: string,
+  text: string
+): Promise<"shared" | "downloaded" | "failed"> {
+  const nav = navigator as Navigator & {
+    canShare?: (data: ShareData) => boolean;
+    share?: (data: ShareData) => Promise<void>;
+  };
+
+  if (nav.canShare?.({ files: [file] }) && nav.share) {
+    try {
+      await nav.share({ files: [file], title, text });
+      return "shared";
+    } catch (err) {
+      // Dismissing the sheet is a choice, not a failure to report.
+      if ((err as Error)?.name === "AbortError") return "shared";
+    }
+  }
+
+  try {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    // Revoked on the next tick so the click has taken the URL.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return "downloaded";
+  } catch {
+    return "failed";
+  }
+}
