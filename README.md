@@ -6,17 +6,24 @@ Full product & technical plan: see the plan doc (`~/.claude/plans/the-goal-is-to
 
 ## Structure
 
-- `apps/web` — the PWA: React + Vite + MapLibre dark radar, installable on Android & iOS.
-- `apps/sky` — `aloft-sky`: Fastify + WebSocket service that polls free ADS-B providers (adsb.lol primary, airplanes.live failover), dedupes requests per geographic cell, and streams nearby aircraft to each player.
+- `apps/web` — the PWA: React + Vite + MapLibre dark radar, installable on Android & iOS. Hosted on Vercel.
+- `apps/sky` — `aloft-sky`: Fastify + WebSocket service that polls free ADS-B providers (adsb.lol primary, airplanes.live failover), dedupes requests per geographic cell, and streams nearby aircraft to each player. Hosted on Railway.
 - `packages/shared` — shared types + geo math (bearing, elevation, dead reckoning) used by both.
+- `supabase/schema.sql` — durable state: players, catches, friendships, push subscriptions. Apply with `npm run db:schema`.
+
+Live plane state and position-fix history live in memory in `SkyHub`, so the service runs as a **single instance** — never scale it past one replica.
 
 ## Run it
 
 ```bash
 npm install
 npm run gen:icons   # once: generates placeholder PWA icons
+vercel env pull     # once: writes .env.local (Postgres + VAPID keys)
+npm run db:schema   # once: applies supabase/schema.sql
 npm run dev         # starts sky (:8787) and web (:5173) together
 ```
+
+The sky service reads `.env.local` automatically, so no exports are needed.
 
 Open http://localhost:5173 — allow location, and live aircraft within 15 km appear on the radar. No planes near you right now? Stand at Heathrow instead:
 
@@ -30,9 +37,20 @@ Tap a plane for its card: callsign, type, registration, altitude, speed, distanc
 
 ```bash
 npm test                                  # geo math unit tests (vitest)
+npm test --workspace apps/sky             # Postgres-backed store tests
 npm run typecheck --workspace apps/sky    # sky typecheck
 npm run build                             # web typecheck + production build
 ```
+
+The sky suite needs a database; without one those suites skip rather than fail.
+
+## Environment
+
+`apps/sky` (set on Railway): `DATABASE_URL` — the Supabase **Supavisor pooler** URI on port 6543. The direct endpoint is IPv6-only and will not connect, and the pooler runs in transaction mode, which is why `postgres.js` is constructed with `prepare: false`. Also `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. `PORT` is injected by Railway.
+
+`apps/web` (set on Vercel): `VITE_SKY_URL` — the public Railway URL.
+
+Locally, `.env.local` (from `vercel env pull`) supplies all of these; `POSTGRES_URL` is accepted in place of `DATABASE_URL`.
 
 Debug endpoints on the sky service:
 
@@ -54,7 +72,7 @@ On desktop or in simulator mode there's no compass, so the hunt falls back to **
 ## Progression & pings (M2)
 
 - **Achievements** (12 to start — counts, rarity firsts, altitude, night ops, overhead, streaks) unlock with animated chips on the reveal screen and live on a badge wall in the Hangar, alongside your 🔥 day-streak.
-- **Sky pings**: after your first catch, the reveal screen offers "Ping me when something good flies over." The sky service then geofences your spot every minute and sends a Web Push when an uncommon-or-better aircraft enters your radius — rarity-teased ("Something rare is inbound from the west…"), max one ping per 30 min, never the same airframe twice. VAPID keys are auto-generated into `apps/sky/data/` on first run (set `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` in production).
+- **Sky pings**: after your first catch, the reveal screen offers "Ping me when something good flies over." The sky service then geofences your spot every minute and sends a Web Push when an uncommon-or-better aircraft enters your radius — rarity-teased ("Something rare is inbound from the west…"), max one ping per 30 min, never the same airframe twice. VAPID keys are auto-generated into `apps/sky/data/` on first run. In a deployed environment the service **refuses to start** without `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` — the container filesystem is ephemeral, so generated keys would be replaced on every deploy and silently invalidate every existing subscription.
 - **Install walkthrough**: after the first catch, iOS players get the Add-to-Home-Screen guide (required for push on iOS 16.4+); Android/desktop get the native install prompt.
 - Note: push requires the built app (`npm run build && npm run preview --workspace apps/web`) — the dev server doesn't register the service worker.
 
