@@ -10,9 +10,19 @@ import "./styles/base.css";
 import "./styles/ui.css";
 import "./styles/boot.css";
 import { App } from "./App";
+import { ViewportDebug } from "./ui/ViewportDebug";
+
+/**
+ * TEMPORARY: set to false (or delete both this flag and the ViewportDebug
+ * import/mount) once the iOS standalone layout gap is resolved. Mounted here
+ * rather than inside App because App returns early for the boot, hunt and
+ * reveal screens, and the probe has to be visible on all of them.
+ */
+const SHOW_VIEWPORT_DEBUG = true;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
+    {SHOW_VIEWPORT_DEBUG && <ViewportDebug />}
   </StrictMode>
 );
