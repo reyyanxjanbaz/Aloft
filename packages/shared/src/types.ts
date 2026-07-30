@@ -62,7 +62,7 @@ export type ServerMessage =
   | { type: "error"; message: string };
 
 /** Range within which an aircraft can be hunted, and which the geofence watches. */
-export const CAPTURE_RADIUS_KM = 20;
+export const CAPTURE_RADIUS_KM = 200;
 /** Upper bound on viewport streaming — keeps one upstream request per cell sane. */
 export const MAX_VIEW_RADIUS_KM = 250;
 export const MIN_VIEW_RADIUS_KM = 5;
