@@ -1,6 +1,6 @@
 import { Suspense, useEffect, type MutableRefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Bounds, ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
+import { ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { AircraftModel } from "./AircraftModel";
 
@@ -58,7 +58,7 @@ export function Stage({
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ position: [5, 4.4, 7], fov: 40 }}
+      camera={{ position: [3.1, 3.5, 5.4], fov: 42 }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
     >
       <color attach="background" args={["#080d0b"]} />
@@ -66,22 +66,20 @@ export function Stage({
 
       <Suspense fallback={null}>
         {/*
-         * Bounds fits the camera to the aircraft's actual extents. This matters
-         * most in portrait, where the horizontal field of view is roughly half
-         * the vertical — a fixed camera distance framed a widebody's engines
-         * and nothing else.
+         * The model self-centres and normalises to a constant size (see
+         * Airframe's layout effect), so it always sits on the origin. That lets
+         * us use a fixed camera and orbit about [0,0,0] — the aircraft can never
+         * drift off-centre as it spins or when the user drags it around, which a
+         * bounding-box auto-fit could not guarantee for a rotating asymmetric
+         * shape.
          */}
-        <Bounds fit clip observe margin={1.08}>
-          <group position={[0, 0.35, 0]}>
-            <AircraftModel typeIcao={typeIcao} callsign={callsign} />
-          </group>
-        </Bounds>
+        <AircraftModel typeIcao={typeIcao} callsign={callsign} />
 
         <ContactShadows
-          position={[0, -1.35, 0]}
-          opacity={0.55}
-          scale={16}
-          blur={2.6}
+          position={[0, -1.7, 0]}
+          opacity={0.5}
+          scale={14}
+          blur={2.8}
           far={5}
           color="#000000"
         />
@@ -90,8 +88,8 @@ export function Stage({
         <Environment resolution={256} frames={1}>
           <Lightformer form="rect" intensity={5} position={[0, 6, 1]} scale={[12, 5, 1]} rotation={[Math.PI / 2, 0, 0]} color="#ffffff" />
           <Lightformer form="rect" intensity={2.2} position={[-6, 1, 2]} scale={[10, 6, 1]} rotation={[0, Math.PI / 2, 0]} color="#cfe6ff" />
-          <Lightformer form="rect" intensity={2.6} position={[6, 0.5, -1]} scale={[10, 6, 1]} rotation={[0, -Math.PI / 2, 0]} color="#00e08a" />
-          <Lightformer form="ring" intensity={1.4} position={[0, -4, 3]} scale={8} color="#0c8c59" />
+          <Lightformer form="rect" intensity={1.8} position={[6, 0.5, -1]} scale={[10, 6, 1]} rotation={[0, -Math.PI / 2, 0]} color="#4be0a0" />
+          <Lightformer form="ring" intensity={0.9} position={[0, -4, 3]} scale={8} color="#0c8c59" />
         </Environment>
       </Suspense>
 
@@ -100,7 +98,7 @@ export function Stage({
         <orthographicCamera attach="shadow-camera" args={[-8, 8, 8, -8, 0.1, 24]} />
       </directionalLight>
 
-      {/* makeDefault lets Bounds drive the same controls it fits. */}
+      {/* Orbit about the origin — where the normalised model is centred. */}
       <OrbitControls
         makeDefault
         enabled={interactive}
