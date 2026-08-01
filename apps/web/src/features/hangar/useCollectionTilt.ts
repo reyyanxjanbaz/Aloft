@@ -2,6 +2,11 @@ import { useEffect, useRef } from "react";
 
 const clamp = (v: number, a = -1, b = 1): number => Math.min(Math.max(v, a), b);
 
+/** How many degrees of tilt map to the full effect, and the resting pitch of a
+ *  phone held up to look at it (screen tilted back ~45°). */
+const TILT_RANGE_DEG = 22;
+const NEUTRAL_PITCH_DEG = 45;
+
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
@@ -10,20 +15,31 @@ interface OrientationPermissionAPI {
   requestPermission?: () => Promise<"granted" | "denied" | "default">;
 }
 
+/** Screen rotation in degrees, so beta/gamma can be remapped in landscape. */
+function screenAngle(): number {
+  if (typeof window === "undefined") return 0;
+  const a = window.screen?.orientation?.angle;
+  if (typeof a === "number") return a;
+  const legacy = (window as unknown as { orientation?: number }).orientation;
+  return typeof legacy === "number" ? legacy : 0;
+}
+
 /**
  * Drives the whole caught-plane collection from one light source, so tilting
  * the phone (or, on desktop, moving the pointer) makes every visible foil card
  * catch the light together — like turning a case of cards under a lamp.
  *
  * Writes eased `--gx/--gy/--gpfc/--gon` custom properties on a container
- * element; the cards inside read them through the cascade, so there is no
- * per-card React state and no per-card listener. On phones it uses the
- * gyroscope (`deviceorientation`), requesting the iOS motion permission on the
- * player's first touch so there's no button to hunt for; on desktop it falls
- * back to the pointer. Under prefers-reduced-motion it attaches nothing and the
- * cards stay flat.
+ * element; the cards inside read them through the cascade, so there's no
+ * per-card state and no per-card listener.
  *
- * Returns a ref to place on the collection container.
+ * Phones use the gyroscope (`deviceorientation`). iOS gates the sensor behind a
+ * permission that can only be requested from a genuine user gesture and only in
+ * a secure (HTTPS) context, so we request it on the player's first tap in the
+ * Hangar (a `click`/`touchend` — the triggers iOS actually honours). Android
+ * and other platforms expose the sensor without a prompt, so we attach right
+ * away. Desktop falls back to the pointer. Under prefers-reduced-motion nothing
+ * attaches and the cards stay flat.
  */
 export function useCollectionTilt<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -58,6 +74,7 @@ export function useCollectionTilt<T extends HTMLElement>() {
       if (!raf) raf = requestAnimationFrame(frame);
     };
 
+    // ── desktop pointer ──
     const onPointerMove = (e: PointerEvent) => {
       if (e.pointerType === "touch") return; // touch devices use the gyroscope
       tx = clamp((e.clientX / window.innerWidth - 0.5) * 2);
@@ -71,50 +88,65 @@ export function useCollectionTilt<T extends HTMLElement>() {
       targetOn = 0;
       kick();
     };
+    window.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerleave", onPointerLeave);
+
+    // ── gyroscope ──
     const onOrient = (e: DeviceOrientationEvent) => {
-      if (e.gamma == null || e.beta == null) return;
-      // gamma is left/right roll; beta is front/back pitch. 42° is a natural
-      // "holding the phone up to look" resting pitch, so subtract it.
-      tx = clamp(e.gamma / 30);
-      ty = clamp((e.beta - 42) / 30);
+      if (e.beta == null || e.gamma == null) return;
+      // Remap for the current screen rotation so "roll" and "pitch" stay
+      // consistent whichever way the phone is held.
+      let g = e.gamma; // left/right roll, -90..90
+      let b = e.beta; // front/back pitch, -180..180
+      const angle = screenAngle();
+      if (angle === 90) {
+        g = e.beta;
+        b = -e.gamma;
+      } else if (angle === 270 || angle === -90) {
+        g = -e.beta;
+        b = e.gamma;
+      } else if (angle === 180) {
+        g = -e.gamma;
+        b = -e.beta;
+      }
+      tx = clamp(g / TILT_RANGE_DEG);
+      ty = clamp((b - NEUTRAL_PITCH_DEG) / TILT_RANGE_DEG);
       targetOn = 1;
       kick();
     };
 
-    window.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerleave", onPointerLeave);
-
-    let requestOnGesture: (() => void) | null = null;
-    if (typeof DeviceOrientationEvent !== "undefined") {
-      const api = DeviceOrientationEvent as unknown as OrientationPermissionAPI;
-      if (typeof api.requestPermission === "function") {
-        // iOS: permission must be asked from a user gesture. Do it silently on
-        // the first touch so the effect is simply on, with no button.
-        requestOnGesture = () => {
-          window.removeEventListener("pointerdown", requestOnGesture!);
-          window.removeEventListener("touchend", requestOnGesture!);
-          api
-            .requestPermission!()
+    let detachGyro = () => {};
+    const DOE = typeof window !== "undefined" ? (window.DeviceOrientationEvent as unknown as OrientationPermissionAPI | undefined) : undefined;
+    if (DOE) {
+      if (typeof DOE.requestPermission === "function") {
+        // iOS: ask on the first real tap; both click and touchend are triggers
+        // iOS honours (pointerdown is not reliably one).
+        const requestOnce = () => {
+          document.removeEventListener("click", requestOnce);
+          document.removeEventListener("touchend", requestOnce);
+          DOE.requestPermission!()
             .then((state) => {
               if (state === "granted") window.addEventListener("deviceorientation", onOrient);
             })
             .catch(() => {});
         };
-        window.addEventListener("pointerdown", requestOnGesture);
-        window.addEventListener("touchend", requestOnGesture);
+        document.addEventListener("click", requestOnce);
+        document.addEventListener("touchend", requestOnce);
+        detachGyro = () => {
+          document.removeEventListener("click", requestOnce);
+          document.removeEventListener("touchend", requestOnce);
+          window.removeEventListener("deviceorientation", onOrient);
+        };
       } else {
         window.addEventListener("deviceorientation", onOrient);
+        detachGyro = () => window.removeEventListener("deviceorientation", onOrient);
       }
     }
 
     return () => {
       window.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("pointerleave", onPointerLeave);
-      window.removeEventListener("deviceorientation", onOrient);
-      if (requestOnGesture) {
-        window.removeEventListener("pointerdown", requestOnGesture);
-        window.removeEventListener("touchend", requestOnGesture);
-      }
+      detachGyro();
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);
