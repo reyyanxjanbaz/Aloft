@@ -48,14 +48,16 @@ export function HangarView({ position }: { position: PlayerPosition }) {
 
   const all = entries ?? [];
   // Recomputed only when the collection changes: these walk every catch.
-  const { points, streak, earned } = useMemo(
-    () => ({
+  const { points, streak, earned, rarityCounts } = useMemo(() => {
+    const counts = Object.fromEntries(RARITY_ORDER.map((r) => [r, 0])) as Record<string, number>;
+    for (const e of all) counts[e.rarity] = (counts[e.rarity] ?? 0) + 1;
+    return {
       points: all.reduce((sum, e) => sum + (RARITY_ORDER.indexOf(e.rarity) + 1) ** 2, 0),
       streak: streakDays(all, Date.now()),
       earned: new Set(evaluateAchievements(all)),
-    }),
-    [entries]
-  );
+      rarityCounts: counts,
+    };
+  }, [entries]);
   const featured = all[0];
   // The grid shows the collection minus the featured hero, filtered.
   const galleryRest = useMemo(() => {
@@ -140,7 +142,17 @@ export function HangarView({ position }: { position: PlayerPosition }) {
       {selected && (
         <Viewer entry={selected} position={position} snapshotRef={snapshotRef} onClose={closeViewer} />
       )}
-      {statsOpen && <StatsSheet hexes={hexes} earned={earned} onClose={closeStats} />}
+      {statsOpen && (
+        <StatsSheet
+          total={all.length}
+          points={points}
+          streak={streak}
+          rarityCounts={rarityCounts}
+          hexes={hexes}
+          earned={earned}
+          onClose={closeStats}
+        />
+      )}
     </div>
   );
 }
@@ -230,20 +242,30 @@ function HeroStat({ label, value, unit }: { label: string; value: string; unit: 
 }
 
 /**
- * Badges and the live fleet, in an on-demand sheet. Kept off the main view so
- * the collection is the hero — and so the fleet's per-airframe network lookups
- * only fire when the player actually opens this, not on every hangar visit.
+ * The Logbook: collection totals, rarity distribution, badge progress and the
+ * live fleet, in an on-demand sheet. Kept off the main view so the collection
+ * is the hero — and so the fleet's per-airframe network lookups only fire when
+ * the player actually opens this, not on every hangar visit.
  */
 function StatsSheet({
+  total,
+  points,
+  streak,
+  rarityCounts,
   hexes,
   earned,
   onClose,
 }: {
+  total: number;
+  points: number;
+  streak: number;
+  rarityCounts: Record<string, number>;
   hexes: string[];
   earned: Set<string>;
   onClose: () => void;
 }) {
   const ref = useDialog<HTMLDivElement>(onClose);
+  const peak = Math.max(1, ...RARITY_ORDER.map((r) => rarityCounts[r] ?? 0));
   return (
     <div className="sheet-scrim" onClick={onClose}>
       <div
@@ -251,27 +273,72 @@ function StatsSheet({
         className="sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="Badges and fleet"
+        aria-label="Logbook"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sheet__head">
-          <h2 className="sheet__title">Badges</h2>
+          <h2 className="sheet__title">Logbook</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <IconClose size={18} weight="bold" />
           </button>
         </div>
-        <ul className="hangar__badges">
-          {ACHIEVEMENTS.map((a) => {
-            const has = earned.has(a.id);
-            return (
-              <li key={a.id} className={has ? "badge badge--earned" : "badge"} title={`${a.name} — ${a.description}`}>
-                <AchievementIcon name={a.icon} size={16} weight={has ? "fill" : "regular"} />
-                <span>{a.name}</span>
-              </li>
-            );
-          })}
-        </ul>
+
+        <dl className="logbook__tally">
+          <div className="readout">
+            <dt className="label">Airframes</dt>
+            <dd className="readout__value">{total}</dd>
+          </div>
+          <div className="readout">
+            <dt className="label">Points</dt>
+            <dd className="readout__value" style={{ color: "var(--amber)" }}>{points}</dd>
+          </div>
+          <div className="readout">
+            <dt className="label">Badges</dt>
+            <dd className="readout__value">{earned.size}/{ACHIEVEMENTS.length}</dd>
+          </div>
+          <div className="readout">
+            <dt className="label">Streak</dt>
+            <dd className="readout__value">{streak > 0 ? `${streak}d` : "—"}</dd>
+          </div>
+        </dl>
+
+        <div className="logbook__section">
+          <h3 className="label">Rarity mix</h3>
+          <ul className="logbook__dist">
+            {[...RARITY_ORDER].reverse().map((r) => {
+              const n = rarityCounts[r] ?? 0;
+              return (
+                <li key={r} className="dist" style={{ ["--rarity" as string]: `var(--rarity-${r})` }}>
+                  <span className="dist__name">{RARITY_LABEL[r]}</span>
+                  <span className="dist__bar" aria-hidden="true">
+                    <i style={{ width: `${(n / peak) * 100}%`, opacity: n ? 1 : 0.2 }} />
+                  </span>
+                  <span className="dist__n mono">{n}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <div className="logbook__section">
+          <h3 className="label">Badges</h3>
+          <ul className="logbook__badges">
+            {ACHIEVEMENTS.map((a) => {
+              const has = earned.has(a.id);
+              return (
+                <li key={a.id} className={has ? "lbadge lbadge--earned" : "lbadge"}>
+                  <AchievementIcon name={a.icon} size={18} weight={has ? "fill" : "regular"} />
+                  <span className="lbadge__text">
+                    <strong>{a.name}</strong>
+                    <span>{a.description}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
         {hexes.length > 0 && <FleetStatus hexes={hexes} />}
       </div>
     </div>

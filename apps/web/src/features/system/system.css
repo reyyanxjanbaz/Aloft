@@ -1,99 +1,206 @@
-.sys {
+/*
+ * System — settings and status as an aircraft systems synoptic. Each subsystem
+ * is a panel; controls are mechanical switches; the data feeds read as signal
+ * channels. Composes the Flight Deck primitives; hairlines and solid fills only.
+ */
+
+.sys-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.sys-badge b { color: var(--phos); font-weight: 600; }
+
+.sys-panel {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0; /* .screen is a flex column — don't let panels squash */
+  background: var(--deck);
+  border: 1px solid var(--rule);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.sys-foot { flex-shrink: 0; }
+
+.sys-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--s-3);
-  padding-bottom: var(--s-4);
+  padding: var(--s-3) var(--s-4);
   border-bottom: 1px solid var(--rule);
+  background: var(--deck-2);
 }
+.sys-panel__head h2 { margin: 0; }
 
-.sys:last-child {
-  border-bottom: none;
-}
+/* ── Control row: label block + mechanical switch ─────────── */
 
-.sys__row {
+.sys-ctrl {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
 }
+.sys-ctrl + .sys-ctrl { border-top: 1px solid var(--rule); }
 
-.sys__text {
+.sys-ctrl__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sys-ctrl__text strong { font-size: var(--t-h2); font-weight: 600; color: var(--ink); }
+.sys-ctrl__text span { font-size: var(--t-data-sm); color: var(--ink-2); line-height: 1.4; }
+
+.sys-ctrl__aside {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.sys__text strong {
-  font-size: var(--t-h2);
-  font-weight: 600;
-}
-
-.sys__text span {
-  font-size: var(--t-data-sm);
-  color: var(--ink-2);
-  line-height: 1.4;
-}
-
-.sys__on {
-  display: inline-flex;
   align-items: center;
-  gap: var(--s-1);
+  gap: var(--s-3);
+  flex-shrink: 0;
+}
+.sys-ctrl__state {
   font-family: var(--font-mono);
-  font-size: var(--t-data-sm);
-  color: var(--phos);
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  min-width: 3ch;
+  text-align: right;
+}
+.sys-ctrl__state--on { color: var(--phos); }
+
+/* ── The switch ───────────────────────────────────────────── */
+
+.sw {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 44px; /* keeps the 44px touch target; visual track is smaller */
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.sw__track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border: 1px solid var(--rule-hot);
+  border-radius: 999px;
+  background: var(--void);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.sw__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--ink-3);
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.sw--on .sw__track { border-color: var(--phos); background: var(--phos-deep); }
+.sw--on .sw__thumb { transform: translateX(20px); background: var(--phos); }
+.sw:disabled { cursor: not-allowed; opacity: 0.5; }
+.sw:focus-visible { outline: none; }
+.sw:focus-visible .sw__track { border-color: var(--phos); box-shadow: 0 0 0 2px var(--phos-deep); }
+
+/* ── Signal channels (data sources) ───────────────────────── */
+
+.sys-src {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+}
+.sys-src + .sys-src { border-top: 1px solid var(--rule); }
+
+.sys-src__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color, var(--phos));
+}
+
+.sys-src__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sys-src__name { font-family: var(--font-mono); font-size: var(--t-data-sm); color: var(--ink); }
+.sys-src__role {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.sys-src__status {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color, var(--phos));
   white-space: nowrap;
 }
 
-.sys__install {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--s-3);
-  padding: var(--s-3);
-  background: var(--deck);
-  border: 1px solid var(--rule);
-  border-radius: var(--r);
-  color: var(--ink-2);
-  font-size: var(--t-small);
-  line-height: 1.55;
-}
+/* ── Prose + install + credits inside panels ──────────────── */
 
-.sys__install svg {
-  color: var(--phos);
-  margin-top: 2px;
-}
+.sys-body { padding: var(--s-3) var(--s-4); }
 
-.sys__copy {
+.sys-copy {
   font-size: var(--t-small);
   line-height: 1.6;
   color: var(--ink-2);
 }
+.sys-copy strong { color: var(--ink); font-weight: 600; }
+.sys-copy + .sys-copy { margin-top: var(--s-2); }
+.sys-copy--dim { color: var(--ink-3); font-size: var(--t-data-sm); }
 
-.sys__copy strong {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.sys__copy--dim {
-  color: var(--ink-3);
-  font-size: var(--t-data-sm);
-}
-
-.sys__credits {
+.sys-install {
   display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-  list-style: none;
-  font-size: var(--t-data-sm);
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.55;
 }
+.sys-install svg { color: var(--phos); flex-shrink: 0; margin-top: 2px; }
 
-.sys__credits li {
+.sys-credits { display: flex; flex-direction: column; list-style: none; }
+.sys-credits li {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s-2);
   align-items: baseline;
+  padding: var(--s-2) var(--s-4);
+  font-size: var(--t-data-sm);
   color: var(--ink-2);
 }
+.sys-credits li + li { border-top: 1px solid var(--rule); }
+.sys-credits strong { color: var(--phos); }
+.sys-credits a { color: var(--cyan); }
 
-.sys__credits strong {
-  color: var(--phos);
+.sys-note {
+  padding: var(--s-3) var(--s-4);
+  border-top: 1px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: var(--t-data-sm);
+  line-height: 1.5;
+  color: var(--amber);
+}
+
+/* ── Footer ───────────────────────────────────────────────── */
+
+.sys-foot {
+  padding-top: var(--s-2);
+  text-align: center;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-data-sm);
+  line-height: 1.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sw__track, .sw__thumb { transition: none; }
 }

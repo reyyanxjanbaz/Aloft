@@ -5,7 +5,7 @@ import { platformName } from "../../lib/platform";
 import { disableSkyPings, enableSkyPings, PushError, skyPingsState } from "../../lib/push";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { listAttributions, type ModelEntry } from "../reveal/modelRegistry";
-import { IconBell, IconCheck, IconInstall, IconMuted, IconSound } from "../../ui/icons";
+import { IconInstall } from "../../ui/icons";
 import "./system.css";
 
 function isStandalone(): boolean {
@@ -14,6 +14,43 @@ function isStandalone(): boolean {
     (navigator as { standalone?: boolean }).standalone === true
   );
 }
+
+/** A mechanical on/off switch — the one control idiom for every toggle here. */
+function Switch({
+  on,
+  disabled,
+  onToggle,
+  label,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      className={on ? "sw sw--on" : "sw"}
+      onClick={onToggle}
+    >
+      <span className="sw__track">
+        <span className="sw__thumb" />
+      </span>
+    </button>
+  );
+}
+
+type Source = { name: string; role: string; status: string; color: string };
+const SOURCES: Source[] = [
+  { name: "adsb.lol", role: "Live ADS-B", status: "Community", color: "var(--phos)" },
+  { name: "airplanes.live", role: "Failover feed", status: "Standby", color: "var(--ink-3)" },
+  { name: "adsbdb.com", role: "Aircraft & routes", status: "Community", color: "var(--phos)" },
+  { name: "OpenStreetMap", role: "Map tiles", status: "Licensed", color: "var(--cyan)" },
+];
 
 /** Settings, install guidance, and the attribution the data licences require. */
 export function SystemView({ position }: { position: PlayerPosition }) {
@@ -39,87 +76,113 @@ export function SystemView({ position }: { position: PlayerPosition }) {
     };
   }, []);
 
+  const toggleSound = () => {
+    primeAudio();
+    setMuted(!muted);
+    setMutedState(!muted);
+  };
+
+  const togglePings = () => {
+    if (pings === "on") {
+      setPings("busy");
+      void disableSkyPings()
+        .then(() => setPings("idle"))
+        .catch(() => setPings("idle"));
+      return;
+    }
+    setPings("busy");
+    enableSkyPings(position.lat, position.lon)
+      .then(() => setPings("on"))
+      .catch((err: unknown) =>
+        setPings(err instanceof PushError && err.kind === "denied" ? "blocked" : "failed")
+      );
+  };
+
+  const pingState =
+    pings === "on" ? "On" : pings === "busy" ? "…" : pings === "blocked" ? "Blocked" : "Off";
+
   return (
     <div className="screen">
       <header className="screen__head">
         <h1 className="screen__title">System</h1>
+        <span className="sys-badge">
+          {installed ? "Installed" : "Browser"} · <b>{platformName()}</b>
+        </span>
       </header>
 
-      <section className="sys">
-        <h2 className="label">Settings</h2>
-        <div className="sys__row">
-          <div className="sys__text">
+      {/* Controls */}
+      <section className="sys-panel">
+        <div className="sys-panel__head">
+          <h2 className="label">Controls</h2>
+        </div>
+        <div className="sys-ctrl">
+          <div className="sys-ctrl__text">
             <strong>Sound and haptics</strong>
             <span>Lock ticks, capture, and reveal cues</span>
           </div>
-          <button
-            className={muted ? "btn btn--quiet" : "btn"}
-            aria-pressed={!muted}
-            onClick={() => {
-              primeAudio();
-              setMuted(!muted);
-              setMutedState(!muted);
-            }}
-          >
-            {muted ? <IconMuted size={16} /> : <IconSound size={16} />}
-            {muted ? "Off" : "On"}
-          </button>
+          <div className="sys-ctrl__aside">
+            <span className={muted ? "sys-ctrl__state" : "sys-ctrl__state sys-ctrl__state--on"}>
+              {muted ? "Off" : "On"}
+            </span>
+            <Switch on={!muted} onToggle={toggleSound} label="Sound and haptics" />
+          </div>
         </div>
-
-        <div className="sys__row">
-          <div className="sys__text">
+        <div className="sys-ctrl">
+          <div className="sys-ctrl__text">
             <strong>Sky alerts</strong>
             <span>Notify me when a rare aircraft enters {CAPTURE_RADIUS_KM} km</span>
           </div>
-          {pings === "on" ? (
-            <button
-              className="btn btn--quiet"
-              disabled={pings !== "on"}
-              onClick={() => {
-                setPings("busy");
-                void disableSkyPings()
-                  .then(() => setPings("idle"))
-                  .catch(() => setPings("idle"));
-              }}
-            >
-              <IconCheck size={14} weight="bold" /> On — turn off
-            </button>
-          ) : (
-            <button
-              className="btn"
+          <div className="sys-ctrl__aside">
+            <span className={pings === "on" ? "sys-ctrl__state sys-ctrl__state--on" : "sys-ctrl__state"}>
+              {pingState}
+            </span>
+            <Switch
+              on={pings === "on"}
               disabled={pings === "busy" || pings === "blocked"}
-              onClick={() => {
-                setPings("busy");
-                enableSkyPings(position.lat, position.lon)
-                  .then(() => setPings("on"))
-                  .catch((err: unknown) =>
-                    setPings(err instanceof PushError && err.kind === "denied" ? "blocked" : "failed")
-                  );
-              }}
-            >
-              <IconBell size={16} />
-              {pings === "busy" ? "Asking" : "Turn on"}
-            </button>
-          )}
+              onToggle={togglePings}
+              label="Sky alerts"
+            />
+          </div>
         </div>
         {/* A tower outage and a browser block are different problems and need
             different instructions — both used to read as "blocked". */}
         {pings === "blocked" && (
-          <p className="note note--warn">
-            Notifications are blocked. Allow them in your browser settings, then try again.
+          <p className="sys-note">
+            Notifications are blocked. Allow them in your browser settings, then switch this back on.
           </p>
         )}
         {pings === "failed" && (
-          <p className="note note--warn">
-            The tower is unreachable — alerts could not be armed. Try again shortly.
-          </p>
+          <p className="sys-note">The tower is unreachable — alerts could not be armed. Try again shortly.</p>
         )}
       </section>
 
+      {/* Signal sources */}
+      <section className="sys-panel">
+        <div className="sys-panel__head">
+          <h2 className="label">Signal</h2>
+          <span className="sys-badge">4 sources</span>
+        </div>
+        {SOURCES.map((s) => (
+          <div className="sys-src" key={s.name} style={{ ["--color" as string]: s.color }}>
+            <span className="sys-src__dot" />
+            <span className="sys-src__id">
+              <span className="sys-src__name">{s.name}</span>
+              <span className="sys-src__role">{s.role}</span>
+            </span>
+            <span className="sys-src__status">{s.status}</span>
+          </div>
+        ))}
+        <p className="sys-body sys-copy sys-copy--dim">
+          Feeds are licensed for non-commercial use. Aloft is a fan project and is not for navigation.
+        </p>
+      </section>
+
       {!installed && (
-        <section className="sys">
-          <h2 className="label">Install</h2>
-          <div className="sys__install">
+        <section className="sys-panel">
+          <div className="sys-panel__head">
+            <h2 className="label">Install</h2>
+          </div>
+          <div className="sys-install">
             <IconInstall size={20} />
             <p>
               {ios
@@ -130,28 +193,19 @@ export function SystemView({ position }: { position: PlayerPosition }) {
         </section>
       )}
 
-      <section className="sys">
-        <h2 className="label">Data</h2>
-        <p className="sys__copy">
-          Live aircraft positions come from <strong>adsb.lol</strong> and <strong>airplanes.live</strong>,
-          community ADS-B networks, with aircraft and route details from <strong>adsbdb.com</strong>.
-          Map data © OpenStreetMap contributors.
-        </p>
-        <p className="sys__copy sys__copy--dim">
-          These feeds are licensed for non-commercial use. Aloft is a fan project for aviation
-          enthusiasts and is not for navigation.
-        </p>
-      </section>
-
-      <section className="sys">
-        <h2 className="label">Models</h2>
+      {/* Models */}
+      <section className="sys-panel">
+        <div className="sys-panel__head">
+          <h2 className="label">Models</h2>
+          {models.length > 0 && <span className="sys-badge">{models.length} credited</span>}
+        </div>
         {models.length === 0 ? (
-          <p className="sys__copy">
-            Aircraft are generated in the app from real family dimensions. Licensed models added to
-            the library are credited here.
+          <p className="sys-body sys-copy">
+            Aircraft are generated in the app from real airframe dimensions — no downloads. Any licensed
+            model added to the library is credited here.
           </p>
         ) : (
-          <ul className="sys__credits">
+          <ul className="sys-credits">
             {models.map((m) => (
               <li key={m.key}>
                 <strong className="mono">{m.key}</strong>
@@ -169,6 +223,12 @@ export function SystemView({ position }: { position: PlayerPosition }) {
           </ul>
         )}
       </section>
+
+      <p className="sys-foot">
+        Aloft · a fan project for aviation enthusiasts
+        <br />
+        Not for navigation
+      </p>
     </div>
   );
 }

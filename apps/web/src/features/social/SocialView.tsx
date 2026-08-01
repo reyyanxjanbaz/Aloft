@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { RARITY_ORDER } from "@aloft/shared";
 import type { ActivityItem, FriendSummary, LeaderboardRow, PlayerProfile, SharedCatch } from "@aloft/shared";
 import { share } from "../../lib/platform";
 import { usePlayer } from "../../state/player";
-import { IconAdd, IconBack, IconRemove, IconShare, IconStar, IconStreak } from "../../ui/icons";
+import { IconAdd, IconBack, IconCopy, IconRemove, IconShare, IconStar, IconStreak } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
 import { AircraftGlyph } from "../hangar/AircraftGlyph";
 import {
@@ -24,6 +25,8 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: "activity", label: "Activity" },
 ];
 
+const spring = { type: "tween", ease: [0.2, 0.8, 0.2, 1], duration: 0.22 } as const;
+
 function timeAgo(ts: number): string {
   const mins = Math.round((Date.now() - ts) / 60_000);
   if (mins < 1) return "just now";
@@ -31,6 +34,12 @@ function timeAgo(ts: number): string {
   const hours = Math.round(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.round(hours / 24)}d ago`;
+}
+
+function bestRarity(catches: SharedCatch[]): SharedCatch["rarity"] | null {
+  let best = -1;
+  for (const c of catches) best = Math.max(best, RARITY_ORDER.indexOf(c.rarity));
+  return best < 0 ? null : RARITY_ORDER[best]!;
 }
 
 export function SocialView() {
@@ -107,7 +116,23 @@ export function SocialView() {
     }
   };
 
+  const copyCode = () => {
+    if (!player) return;
+    void navigator.clipboard
+      ?.writeText(player.code)
+      .then(() => setMessage("Code copied"))
+      .catch(() => setMessage(`Your code is ${player.code}`));
+  };
+
+  // Your own standing, pulled out of the board so it can headline the panel.
+  const me = useMemo(() => {
+    const idx = board.findIndex((r) => r.isYou);
+    return idx < 0 ? null : { rank: idx + 1, row: board[idx]! };
+  }, [board]);
+  const topScore = useMemo(() => Math.max(1, ...board.map((r) => r.rarityScore)), [board]);
+
   if (visiting) {
+    const best = bestRarity(visiting.catches);
     return (
       <div className="screen">
         <header className="screen__head">
@@ -126,23 +151,39 @@ export function SocialView() {
           <h1 className="screen__title">{visiting.player.name}</h1>
         </header>
         {visiting.catches.length === 0 ? (
-          <p className="empty">Their hangar is empty for now.</p>
+          <p className="sp-empty">Their hangar is empty for now.</p>
         ) : (
-          <ul className="hangar__grid">
-            {visiting.catches.map((c) => (
-              <li key={c.id}>
-                <div className="card" style={{ ["--rarity" as string]: `var(--rarity-${c.rarity})` }}>
-                  <AircraftGlyph typeIcao={c.typeIcao} />
-                  <span className="card__type">{c.typeLabel}</span>
-                  <span className="card__ident mono">{c.callsign || c.hex.toUpperCase()}</span>
-                  <span className="card__foot">
-                    <span className="card__rarity">{RARITY_LABEL[c.rarity]}</span>
-                    {c.firstSpotter && <IconStar size={12} weight="fill" className="card__first" />}
+          <>
+            <div className="sp-visit__sub">
+              <div className="readout">
+                <span className="label">Airframes</span>
+                <span className="readout__value">{visiting.catches.length}</span>
+              </div>
+              {best && (
+                <div className="readout">
+                  <span className="label">Best</span>
+                  <span className="readout__value" style={{ color: `var(--rarity-${best})` }}>
+                    {RARITY_LABEL[best]}
                   </span>
                 </div>
-              </li>
-            ))}
-          </ul>
+              )}
+            </div>
+            <ul className="sp-visit__grid">
+              {visiting.catches.map((c) => (
+                <li key={c.id}>
+                  <div className="card" style={{ ["--rarity" as string]: `var(--rarity-${c.rarity})` }}>
+                    <AircraftGlyph typeIcao={c.typeIcao} />
+                    <span className="card__type">{c.typeLabel}</span>
+                    <span className="card__ident mono">{c.callsign || c.hex.toUpperCase()}</span>
+                    <span className="card__foot">
+                      <span className={`tag tag--${c.rarity}`}>{RARITY_LABEL[c.rarity]}</span>
+                      {c.firstSpotter && <IconStar size={12} weight="fill" className="card__first" />}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     );
@@ -155,26 +196,56 @@ export function SocialView() {
       </header>
 
       {player && (
-        <section className="me">
-          <div className="me__row">
-            <label className="label" htmlFor="spotter-name">
-              Your name
+        <section className="sp-id">
+          <div className="sp-id__top">
+            <label className="sp-id__name-field">
+              <span className="label">Callsign</span>
+              <input
+                className="sp-id__name"
+                defaultValue={player.name}
+                maxLength={24}
+                aria-label="Your name"
+                onBlur={(e) => {
+                  const next = e.target.value.trim();
+                  if (next && next !== player.name) void usePlayer.getState().rename(next);
+                }}
+              />
             </label>
-            <input
-              id="spotter-name"
-              className="me__name"
-              defaultValue={player.name}
-              maxLength={24}
-              onBlur={(e) => {
-                const next = e.target.value.trim();
-                if (next && next !== player.name) void usePlayer.getState().rename(next);
-              }}
-            />
+            {me && (
+              <div className="sp-id__rank readout">
+                <span className="label">Rank</span>
+                <span className="readout__value">#{me.rank}</span>
+              </div>
+            )}
           </div>
-          <div className="me__row me__row--code">
-            <span className="label">Spotter code</span>
-            <strong className="me__code">{player.code}</strong>
+
+          <div className="sp-squawk">
+            <div className="readout">
+              <span className="label">Spotter code</span>
+              <span className="sp-squawk__code">{player.code}</span>
+            </div>
+            <button className="icon-btn" onClick={copyCode} aria-label="Copy your spotter code">
+              <IconCopy size={20} />
+            </button>
           </div>
+
+          {me && (
+            <div className="sp-stats">
+              <div className="readout">
+                <span className="label">Caught</span>
+                <span className="readout__value">{me.row.catches}</span>
+              </div>
+              <div className="readout">
+                <span className="label">Spotters</span>
+                <span className="readout__value">{friends.length}</span>
+              </div>
+              <div className="readout">
+                <span className="label">Points</span>
+                <span className="readout__value">{me.row.rarityScore}</span>
+              </div>
+            </div>
+          )}
+
           <button
             className="btn btn--primary btn--block"
             onClick={() =>
@@ -189,12 +260,12 @@ export function SocialView() {
             }
           >
             <IconShare size={16} weight="bold" />
-            Invite a friend
+            Invite a spotter
           </button>
         </section>
       )}
 
-      <div className="add">
+      <div className="sp-add">
         <input
           className="field"
           placeholder="ENTER CODE"
@@ -210,118 +281,160 @@ export function SocialView() {
         </button>
       </div>
 
-      {message && <p className="note note--ok">{message}</p>}
+      {message && <p className="sp-note sp-note--ok">{message}</p>}
       {/* An identity the tower rejects is not the same as being offline, and
           it needs an action rather than a shrug — previously both showed the
           same "offline" line and the device could never recover. */}
       {auth === "auth-failed" ? (
-        <div className="note note--warn note--action">
+        <div className="sp-note sp-note--warn">
           <span>This device&apos;s identity check failed, so spotters are read-blocked.</span>
           <button className="btn btn--quiet" onClick={() => void startFresh()}>
             Start a fresh identity
           </button>
         </div>
       ) : (
-        offline && <p className="note note--warn">No link to the tower — spotters are offline.</p>
+        offline && <p className="sp-note sp-note--warn">No link to the tower — spotters are offline.</p>
       )}
 
-      <div className="tabs" role="tablist">
+      <div className="sp-tabs" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
-            className={tab === t.id ? "tabs__tab tabs__tab--on" : "tabs__tab"}
+            className="sp-tabs__tab"
             onClick={() => setTab(t.id)}
           >
             {t.label}
+            {tab === t.id && <motion.span layoutId="sp-ink" className="sp-tabs__ink" transition={spring} />}
           </button>
         ))}
       </div>
 
-      {tab === "friends" && (
-        <ul className="rows">
-          {friends.length === 0 && <p className="empty">No friends yet. Share your code above.</p>}
-          {friends.map((f, i) => (
-            <motion.li
-              key={f.id}
-              className="row"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04, duration: 0.28 }}
-            >
-              <button className="row__main" onClick={() => visitFriend(f.id)}>
-                <strong>{f.name}</strong>
-                <span className="row__meta mono">
-                  {f.stats.catches} caught · {f.stats.rarityScore} pts
-                  {f.stats.firstSpots > 0 && ` · ${f.stats.firstSpots} first`}
-                </span>
-              </button>
-              {f.stats.streak > 1 && (
-                <span className="row__streak">
-                  <IconStreak size={12} weight="fill" />
-                  <span className="mono">{f.stats.streak}</span>
-                </span>
-              )}
-              <button
-                className="icon-btn"
-                aria-label={`Remove ${f.name}`}
-                onClick={() =>
-                  void removeFriend(f.id).then((r) => {
-                    if (r.ok) void refresh();
-                    else setMessage("Could not remove — try again");
-                  })
-                }
-              >
-                <IconRemove size={16} />
-              </button>
-            </motion.li>
-          ))}
-        </ul>
-      )}
-
-      {tab === "week" && (
-        <ul className="rows">
-          {board.length <= 1 && <p className="empty">Add friends to race them each week.</p>}
-          {board.map((row, i) => (
-            <li key={row.id} className={row.isYou ? "row row--you" : "row"}>
-              <span className="row__rank mono">{String(i + 1).padStart(2, "0")}</span>
-              <span className="row__main">
-                <strong>
-                  {row.name}
-                  {row.isYou && <span className="row__you"> you</span>}
-                </strong>
-                <span className="row__meta mono">{row.catches} caught this week</span>
-              </span>
-              <span className="row__points mono">{row.rarityScore}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {tab === "activity" && (
-        <ul className="rows">
-          {feed.length === 0 && <p className="empty">Rare catches by your friends show up here.</p>}
-          {feed.map((item) => (
-            <li
-              key={`${item.player.id}:${item.catch.id}`}
-              className="row row--feed"
-              style={{ ["--rarity" as string]: `var(--rarity-${item.catch.rarity})` }}
-            >
-              <AircraftGlyph typeIcao={item.catch.typeIcao} />
-              <span className="row__main">
-                <strong>
-                  {item.player.name} caught a {item.catch.typeLabel}
-                </strong>
-                <span className="row__meta mono">
-                  {RARITY_LABEL[item.catch.rarity]}
-                  {item.catch.firstSpotter && " · first spot"} · {timeAgo(item.catch.caughtAt)}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={tab}
+          className="sp-tabwrap"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={spring}
+        >
+          {tab === "friends" && (
+            <FriendsTab friends={friends} onVisit={visitFriend} onRemove={(id) => void removeFriend(id).then((r) => (r.ok ? refresh() : setMessage("Could not remove — try again")))} />
+          )}
+          {tab === "week" && <BoardTab board={board} topScore={topScore} />}
+          {tab === "activity" && <ActivityTab feed={feed} />}
+        </motion.div>
+      </AnimatePresence>
     </div>
+  );
+}
+
+function FriendsTab({
+  friends,
+  onVisit,
+  onRemove,
+}: {
+  friends: FriendSummary[];
+  onVisit: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  if (friends.length === 0)
+    return <p className="sp-empty">No spotters yet.<br />Share your code and add theirs to compare hangars.</p>;
+  return (
+    <ul className="sp-list">
+      {friends.map((f, i) => (
+        <motion.li
+          key={f.id}
+          className="sp-friend"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: Math.min(i * 0.04, 0.3), duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <button className="sp-friend__open" onClick={() => onVisit(f.id)}>
+            <span className="sp-friend__mark" aria-hidden="true">{f.name.charAt(0).toUpperCase()}</span>
+            <span className="sp-friend__body">
+              <span className="sp-friend__name">{f.name}</span>
+              <span className="sp-friend__chips">
+                <span className="chip"><b>{f.stats.catches}</b> caught</span>
+                <span className="chip chip--pts"><b>{f.stats.rarityScore}</b> pts</span>
+                {f.stats.firstSpots > 0 && (
+                  <span className="chip chip--first"><IconStar size={11} weight="fill" /><b>{f.stats.firstSpots}</b> first</span>
+                )}
+              </span>
+            </span>
+          </button>
+          {f.stats.streak > 1 && (
+            <span className="sp-friend__streak"><IconStreak size={12} weight="fill" />{f.stats.streak}d</span>
+          )}
+          <button className="icon-btn" aria-label={`Remove ${f.name}`} onClick={() => onRemove(f.id)}>
+            <IconRemove size={16} />
+          </button>
+        </motion.li>
+      ))}
+    </ul>
+  );
+}
+
+function BoardTab({ board, topScore }: { board: LeaderboardRow[]; topScore: number }) {
+  if (board.length <= 1)
+    return <p className="sp-empty">Add spotters to race them.<br />Every rare catch this week counts toward points.</p>;
+  return (
+    <ul className="sp-board">
+      {board.map((row, i) => (
+        <li
+          key={row.id}
+          className={`sp-board__row${row.isYou ? " sp-board__row--you" : ""}${i === 0 ? " sp-board__row--lead" : ""}`}
+        >
+          <span className="sp-rank">{String(i + 1).padStart(2, "0")}</span>
+          <span className="sp-board__who">
+            <span className="sp-board__name">
+              {row.name}
+              {row.isYou && <span className="sp-board__you-tag">you</span>}
+            </span>
+            <span className="sp-board__meter" aria-hidden="true">
+              <i style={{ width: `${Math.max(6, (row.rarityScore / topScore) * 100)}%` }} />
+            </span>
+          </span>
+          <span className="sp-board__pts">
+            {row.rarityScore}
+            <small>{row.catches} caught</small>
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ActivityTab({ feed }: { feed: ActivityItem[] }) {
+  if (feed.length === 0)
+    return <p className="sp-empty">Quiet skies.<br />Rare catches by your spotters will land here.</p>;
+  return (
+    <ul className="sp-feed">
+      {feed.map((item) => (
+        <li
+          key={`${item.player.id}:${item.catch.id}`}
+          className="sp-feed__item"
+          style={{ ["--rarity" as string]: `var(--rarity-${item.catch.rarity})` }}
+        >
+          <span className="sp-feed__rail" aria-hidden="true">
+            <span className="sp-feed__dot" />
+          </span>
+          <span className="sp-feed__body">
+            <AircraftGlyph typeIcao={item.catch.typeIcao} />
+            <span className="sp-feed__text">
+              <strong>
+                {item.player.name} caught a {item.catch.typeLabel}
+              </strong>
+              <span className="sp-feed__meta">
+                <span className="r">{RARITY_LABEL[item.catch.rarity]}</span>
+                {item.catch.firstSpotter && " · first spot"} · {timeAgo(item.catch.caughtAt)}
+              </span>
+            </span>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

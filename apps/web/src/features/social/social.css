@@ -1,178 +1,399 @@
-/* ── Your identity card ───────────────────────────────── */
+/*
+ * Spotters — the social screen as a comms panel. Your spotter code is treated
+ * like a transponder squawk (the identity you read aloud), the leaderboard is
+ * an instrument standings board, and activity is a timed strip. Composes the
+ * shared Flight Deck primitives; no gradients, hairlines only.
+ */
 
-.me {
+/* ── Identity panel: the signature "squawk" block ─────────── */
+
+.sp-id {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
+  gap: var(--s-4);
   padding: var(--s-4);
   background: var(--deck);
-  border: 1px solid var(--rule);
+  border: 1px solid var(--rule-hot);
   border-radius: var(--r);
 }
 
-.me__row {
+/* Corner ticks — reserved for this one panel so it reads as the instrument. */
+.sp-id::before,
+.sp-id::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--phos-dim);
+  pointer-events: none;
+}
+.sp-id::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+.sp-id::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+
+.sp-id__top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.sp-id__name-field {
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
+  flex: 1;
+  min-width: 0;
 }
 
-.me__row--code {
-  padding-top: var(--s-3);
-  border-top: 1px solid var(--rule);
-}
-
-.me__name {
+.sp-id__name {
   width: 100%;
   padding: var(--s-1) 0;
   background: none;
   border: none;
   border-bottom: 1px solid var(--rule-hot);
+  font-family: var(--font-display);
   font-size: var(--t-h1);
   font-weight: 600;
   color: var(--ink);
   transition: border-color var(--dur-fast) var(--ease);
 }
+.sp-id__name:focus-visible { border-bottom-color: var(--phos); outline: none; }
 
-.me__name:focus-visible {
-  border-bottom-color: var(--phos);
-  outline: none;
+.sp-id__rank {
+  text-align: right;
+  white-space: nowrap;
+}
+.sp-id__rank .readout__value { color: var(--phos); font-size: var(--t-data-xl); }
+
+/* The squawk readout: the code, given real presence. */
+.sp-squawk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  background: var(--void);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
 }
 
-/* The code is the thing people read aloud — give it real presence. */
-.me__code {
+.sp-squawk__code {
   font-family: var(--font-mono);
-  font-size: var(--t-data-xl);
+  font-size: clamp(1.6rem, 9vw, var(--t-data-xl));
   font-weight: 700;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.34em;
   color: var(--phos);
+  /* trailing letter-spacing pushes the glyph right; pull the box back */
+  margin-right: -0.34em;
 }
 
-.add {
+.sp-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--rule);
+}
+.sp-stats .readout__value { color: var(--ink); }
+.sp-stats .readout:nth-child(3) .readout__value { color: var(--amber); }
+
+/* ── Add a spotter ────────────────────────────────────────── */
+
+.sp-add {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: var(--s-2);
 }
 
-.note {
-  font-size: var(--t-data-sm);
+.sp-note {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
   font-family: var(--font-mono);
+  font-size: var(--t-data-sm);
+  letter-spacing: 0.02em;
+}
+.sp-note--ok { color: var(--phos); }
+.sp-note--warn {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--amber);
+  border-radius: var(--r-sm);
+  color: var(--amber);
 }
 
-.note--ok { color: var(--phos); }
-.note--warn { color: var(--crimson); }
+/* ── Instrument tabs with a sliding indicator ─────────────── */
 
-/* ── Tabs ─────────────────────────────────────────────── */
-
-.tabs {
+.sp-tabs {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   border-bottom: 1px solid var(--rule);
 }
 
-.tabs__tab {
-  min-height: 40px;
-  padding: 0 var(--s-2);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+.sp-tabs__tab {
+  position: relative;
+  min-height: 44px;
   font-family: var(--font-mono);
   font-size: var(--t-label);
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-3);
-  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: color var(--dur-fast) var(--ease);
+}
+.sp-tabs__tab:hover { color: var(--ink-2); }
+.sp-tabs__tab[aria-selected="true"] { color: var(--phos); }
+
+.sp-tabs__ink {
+  position: absolute;
+  bottom: -1px;
+  height: 2px;
+  background: var(--phos);
 }
 
-.tabs__tab:hover {
-  color: var(--ink-2);
-}
+/* ── Lists shared frame ───────────────────────────────────── */
 
-.tabs__tab--on {
-  color: var(--phos);
-  border-bottom-color: var(--phos);
-}
-
-/* ── Rows ─────────────────────────────────────────────── */
-
-.rows {
+.sp-list {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
   list-style: none;
 }
 
-.row {
+/* ── Friend row ───────────────────────────────────────────── */
+
+.sp-friend {
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: var(--s-3);
+  padding: var(--s-2) var(--s-3);
   background: var(--deck);
   border: 1px solid var(--rule);
   border-radius: var(--r);
 }
 
-.row--you {
-  border-color: var(--phos-dim);
-}
-
-.row--feed {
-  border-left: 2px solid var(--rarity, var(--rule-hot));
-}
-
-.row--feed .glyph {
-  width: 40px;
-  height: 34px;
-  margin: 0;
-  flex-shrink: 0;
-}
-
-.row__main {
+.sp-friend__open {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: var(--s-3);
   flex: 1;
   min-width: 0;
   text-align: left;
-  color: var(--ink);
 }
 
-.row__main strong {
+.sp-friend__mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border: 1px solid var(--rule-hot);
+  border-radius: 999px;
+  font-family: var(--font-display);
   font-size: var(--t-h2);
-  font-weight: 600;
-}
-
-.row__meta {
-  font-size: var(--t-data-sm);
-  color: var(--ink-2);
-}
-
-.row__rank {
-  width: 24px;
-  font-size: var(--t-data);
-  color: var(--phos-dim);
-}
-
-.row__points {
-  font-size: var(--t-h1);
   font-weight: 700;
-  color: var(--amber);
+  color: var(--phos);
+  background: var(--deck-2);
 }
 
-.row__streak {
+.sp-friend__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sp-friend__name { font-size: var(--t-h2); font-weight: 600; color: var(--ink); }
+.sp-friend__chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+
+.chip {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--s-1);
+  font-family: var(--font-mono);
   font-size: var(--t-data-sm);
-  color: var(--amber);
+  color: var(--ink-2);
+  white-space: nowrap;
 }
+.chip b { color: var(--ink); font-weight: 600; }
+.chip--pts b { color: var(--amber); }
+.chip--first { color: var(--phos); }
+.chip--first b { color: var(--phos); }
 
-.row__you {
+.sp-friend__streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px var(--s-2);
+  border: 1px solid var(--amber);
+  border-radius: 999px;
   font-family: var(--font-mono);
   font-size: var(--t-label);
-  letter-spacing: 0.14em;
+  font-weight: 600;
+  color: var(--amber);
+  white-space: nowrap;
+}
+
+/* ── Standings board ──────────────────────────────────────── */
+
+.sp-board { display: flex; flex-direction: column; gap: var(--s-1); list-style: none; }
+
+.sp-board__row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid transparent;
+  border-radius: var(--r);
+}
+.sp-board__row--you {
+  background: var(--phos-deep);
+  border-color: var(--phos-dim);
+}
+
+.sp-rank {
+  font-family: var(--font-mono);
+  font-size: var(--t-data);
+  font-weight: 600;
+  color: var(--ink-3);
+  text-align: center;
+}
+.sp-board__row--lead .sp-rank { color: var(--amber); }
+
+.sp-board__who { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sp-board__name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-size: var(--t-h2);
+  font-weight: 600;
+  color: var(--ink);
+}
+.sp-board__you-tag {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--phos);
 }
 
-.card__first {
-  color: var(--amber);
+/* Relative-score meter — solid fill, no gradient. */
+.sp-board__meter {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--rule);
+  overflow: hidden;
 }
+.sp-board__meter i {
+  display: block;
+  height: 100%;
+  background: var(--phos-dim);
+  border-radius: 999px;
+}
+.sp-board__row--you .sp-board__meter i { background: var(--phos); }
+.sp-board__row--lead .sp-board__meter i { background: var(--amber); }
+
+.sp-board__pts {
+  font-family: var(--font-mono);
+  font-size: var(--t-h1);
+  font-weight: 700;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.sp-board__pts small {
+  display: block;
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-align: right;
+}
+
+/* ── Activity timeline ────────────────────────────────────── */
+
+.sp-feed { display: flex; flex-direction: column; list-style: none; }
+
+.sp-feed__item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: var(--s-2);
+  padding: var(--s-2) 0;
+}
+
+/* The connecting spine. */
+.sp-feed__rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+.sp-feed__rail::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--rule);
+}
+.sp-feed__item:first-child .sp-feed__rail::before { top: 18px; }
+.sp-feed__item:last-child .sp-feed__rail::before { bottom: calc(100% - 18px); }
+
+.sp-feed__dot {
+  position: relative;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: var(--rarity, var(--phos));
+  box-shadow: 0 0 0 3px var(--deck);
+}
+
+.sp-feed__body {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  background: var(--deck);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--rarity, var(--rule-hot));
+  border-radius: var(--r);
+  min-width: 0;
+}
+.sp-feed__body .glyph { width: 40px; height: 32px; margin: 0; flex-shrink: 0; }
+.sp-feed__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sp-feed__text strong { font-size: var(--t-body); font-weight: 600; color: var(--ink); }
+.sp-feed__meta { font-family: var(--font-mono); font-size: var(--t-data-sm); color: var(--ink-2); }
+.sp-feed__meta .r { color: var(--rarity, var(--ink)); }
+
+/* ── Visiting a friend's hangar ───────────────────────────── */
+
+.sp-visit__sub {
+  display: flex;
+  gap: var(--s-4);
+  padding-bottom: var(--s-1);
+}
+
+.sp-visit__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--s-3);
+  list-style: none;
+}
+
+/* ── Empty state within a tab ─────────────────────────────── */
+
+.sp-empty {
+  padding: var(--s-8) var(--s-4);
+  text-align: center;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp-tabs__ink { transition: none; }
+}
+
+/* .screen is a flex column; keep its direct children at intrinsic height so
+   the screen scrolls instead of squashing panels. */
+.sp-id, .sp-add, .sp-tabs, .sp-note, .sp-tabwrap, .sp-visit__sub { flex-shrink: 0; }
