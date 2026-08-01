@@ -22,10 +22,14 @@ export interface HangarEntry {
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
 function db(): Promise<IDBPDatabase> {
-  dbPromise ??= openDB("aloft", 2, {
+  dbPromise ??= openDB("aloft", 3, {
     upgrade(database, oldVersion) {
       if (oldVersion < 1) database.createObjectStore("catches", { keyPath: "id" });
       if (oldVersion < 2) database.createObjectStore("meta");
+      // Pending catches were a single slot at meta/pendingCatch, so a second
+      // offline catch overwrote the first. They now live in their own keyed
+      // store — one entry per airframe per local day — so nothing is lost.
+      if (oldVersion < 3) database.createObjectStore("pendingCatches", { keyPath: "id" });
     },
   });
   return dbPromise;
@@ -109,19 +113,43 @@ export interface PendingCatch {
   ts: number;
 }
 
-export async function getPendingCatch(): Promise<PendingCatch | null> {
-  const database = await db();
-  return ((await database.get("meta", "pendingCatch")) as PendingCatch | undefined) ?? null;
+interface PendingRecord extends PendingCatch {
+  /** hex:yyyymmdd — matches the hangar dedup key, so one airframe/day queues once. */
+  id: string;
 }
 
-export async function setPendingCatch(pending: PendingCatch): Promise<void> {
-  const database = await db();
-  await database.put("meta", pending, "pendingCatch");
+/** Stable identity for a pending catch: the same airframe on the same local day. */
+export function pendingId(pending: PendingCatch): string {
+  return `${pending.hex.toLowerCase()}:${localDayKey(pending.ts)}`;
 }
 
-export async function clearPendingCatch(): Promise<void> {
+/**
+ * Persists a capture the tower hasn't confirmed yet. Keyed by airframe+day, so
+ * a burst of offline catches all survive and a retry of the same one doesn't
+ * pile up duplicates.
+ */
+export async function enqueuePendingCatch(pending: PendingCatch): Promise<void> {
   const database = await db();
-  await database.delete("meta", "pendingCatch");
+  const record: PendingRecord = { ...pending, id: pendingId(pending) };
+  await database.put("pendingCatches", record);
+}
+
+export async function listPendingCatches(): Promise<PendingCatch[]> {
+  const database = await db();
+  // Migrate a legacy single-slot pending catch, if one survived an upgrade,
+  // into the queue so it flushes like any other.
+  const legacy = (await database.get("meta", "pendingCatch")) as PendingCatch | undefined;
+  if (legacy) {
+    await database.put("pendingCatches", { ...legacy, id: pendingId(legacy) } satisfies PendingRecord);
+    await database.delete("meta", "pendingCatch");
+  }
+  const all = (await database.getAll("pendingCatches")) as PendingRecord[];
+  return all.map(({ id: _id, ...pending }) => pending);
+}
+
+export async function removePendingCatch(pending: PendingCatch): Promise<void> {
+  const database = await db();
+  await database.delete("pendingCatches", pendingId(pending));
 }
 
 export async function listCatches(): Promise<HangarEntry[]> {

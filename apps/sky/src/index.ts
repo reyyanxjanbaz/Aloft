@@ -11,6 +11,14 @@ import { SocialStore } from "./social/store";
 
 const PORT = Number(process.env.PORT ?? 8787);
 
+// Last line of defence for the single instance: a stray rejection from a
+// background timer (a geofence tick, a poll loop) must be logged, not left to
+// terminate the process under Node's default unhandled-rejection behaviour and
+// take radar down with it.
+process.on("unhandledRejection", (reason) => {
+  console.error("[sky] unhandled rejection:", reason);
+});
+
 // A missing connection string is a configuration error, not an outage — fail
 // immediately and clearly rather than retrying a placeholder forever.
 if (!hasDb) {

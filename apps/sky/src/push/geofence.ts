@@ -36,12 +36,21 @@ function compassWord(bearing: number): string {
  * inside their radius and sends a rarity-teased Web Push. The aircraft type is
  * deliberately NOT revealed — mystery is the hook that opens the app.
  */
-export function startGeofence(provider: FlightProvider, store: PushStore): void {
-  const tick = async () => {
-    const now = Date.now();
-    for (const sub of await store.all()) {
-      if (now - sub.lastPingAt < PER_SUB_COOLDOWN_MS) continue;
-      try {
+export async function runGeofenceTick(
+  provider: FlightProvider,
+  store: PushStore,
+  now: number
+): Promise<void> {
+  let subs: Awaited<ReturnType<PushStore["all"]>>;
+  try {
+    subs = await store.all();
+  } catch (err) {
+    console.warn("[push] geofence: failed to load subscriptions:", err);
+    return;
+  }
+  for (const sub of subs) {
+    if (now - sub.lastPingAt < PER_SUB_COOLDOWN_MS) continue;
+    try {
         const aircraft = await provider.getAircraftNear(sub.lat, sub.lon, sub.radiusKm / NM_TO_KM);
         const candidates = aircraft
           .filter((ac) => ac.altFt > MIN_ALT_FT)
@@ -79,11 +88,21 @@ export function startGeofence(provider: FlightProvider, store: PushStore): void 
             console.warn("[push] send failed, will retry next tick:", status ?? err);
           }
         }
-      } catch (err) {
-        console.warn("[push] geofence check failed:", err);
-      }
+    } catch (err) {
+      console.warn("[push] geofence check failed:", err);
     }
-  };
+  }
+}
 
-  setInterval(tick, CHECK_MS).unref?.();
+/**
+ * Every minute, runs one geofence tick. The tick is deliberately never allowed
+ * to reject: it fires unawaited on an interval, so an unhandled rejection would
+ * crash the single instance and take radar down with it.
+ */
+export function startGeofence(provider: FlightProvider, store: PushStore): void {
+  setInterval(() => {
+    void runGeofenceTick(provider, store, Date.now()).catch((err) => {
+      console.warn("[push] geofence tick failed:", err);
+    });
+  }, CHECK_MS).unref?.();
 }

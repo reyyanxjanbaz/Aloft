@@ -97,6 +97,75 @@ describe("SkyHub.validateCatch", () => {
   });
 });
 
+/**
+ * Returns a stationary aircraft sitting exactly at the queried coordinate, with
+ * a caller-set hex — so each catch can validate against a real plane genuinely
+ * present at its own claimed location. That isolates the travel-plausibility
+ * check from the ordinary "was the plane there?" distance check.
+ */
+class PlaceProvider implements FlightProvider {
+  readonly name = "place";
+  hex = "abc123";
+
+  async getAircraftNear(lat: number, lon: number): Promise<AircraftState[]> {
+    return [{ ...aircraftAt(lat, lon), hex: this.hex, track: null, gsKt: 0 } as AircraftState];
+  }
+
+  async getAirframe(): Promise<null> {
+    return null;
+  }
+}
+
+describe("SkyHub.validateCatch anti-cheat: implausible travel", () => {
+  const PLAYER = "player-1";
+
+  it("accepts a player's first catch, with no prior location to compare against", async () => {
+    const hub = new SkyHub(new PlaceProvider());
+    const result = await hub.validateCatch("abc123", 51.47, -0.45, Date.now(), PLAYER, AUTHED);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a second catch that implies impossible travel from the first", async () => {
+    // A worldwide catch-farmer echoing each plane's own broadcast position
+    // teleports across the planet between catches. A real plane sits at each
+    // spot (so the distance check passes), but no vehicle covers ~9,500 km
+    // (London → Tokyo) in 30 s, so the second catch must be refused.
+    const provider = new PlaceProvider();
+    const hub = new SkyHub(provider);
+    const t0 = Date.now();
+    provider.hex = "london";
+    const london = await hub.validateCatch("london", 51.47, -0.45, t0, PLAYER, AUTHED);
+    expect(london.ok).toBe(true);
+    provider.hex = "tokyo";
+    const tokyo = await hub.validateCatch("tokyo", 35.68, 139.76, t0 + 30_000, PLAYER, AUTHED);
+    expect(tokyo.ok).toBe(false);
+  });
+
+  it("allows a second catch a short distance from the first", async () => {
+    // Ordinary movement between two nearby catches must never be mistaken for
+    // teleporting — the plausibility gate only rejects globe-spanning jumps.
+    const provider = new PlaceProvider();
+    const hub = new SkyHub(provider);
+    const t0 = Date.now();
+    provider.hex = "one";
+    const first = await hub.validateCatch("one", 51.47, -0.45, t0, PLAYER, AUTHED);
+    expect(first.ok).toBe(true);
+    const second = await hub.validateCatch("one", 51.475, -0.451, t0 + 5_000, PLAYER, AUTHED);
+    expect(second.ok).toBe(true);
+  });
+
+  it("does not constrain anonymous catches by travel speed (no identity to attribute movement to)", async () => {
+    const provider = new PlaceProvider();
+    const hub = new SkyHub(provider);
+    const t0 = Date.now();
+    provider.hex = "london";
+    await hub.validateCatch("london", 51.47, -0.45, t0, undefined, AUTHED);
+    provider.hex = "tokyo";
+    const second = await hub.validateCatch("tokyo", 35.68, 139.76, t0 + 30_000, undefined, AUTHED);
+    expect(second.ok).toBe(true);
+  });
+});
+
 describe("SkyHub.subscribe", () => {
   it("sizes a new cell's very first poll to the joining subscriber's viewport", () => {
     const provider = new CountingProvider();

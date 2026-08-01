@@ -51,8 +51,16 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
   const [phase, setPhase] = useState<Phase>("searching");
   const [readouts, setReadouts] = useState<Readouts | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // `faded`/`lost` drive the JSX, but the frame loop reads and writes them
+  // through refs so it can react to a feed gap without listing them as effect
+  // dependencies. They used to be deps, so the loop's own setFaded/setLost
+  // calls tore the loop down and reset capture progress on a single dropped
+  // poll — and, mid-submit, could skip go(reveal) after the tower had already
+  // recorded the catch. Refs keep the loop mounted for the whole capture.
   const [faded, setFaded] = useState(false);
   const [lost, setLost] = useState(false);
+  const fadedRef = useRef(false);
+  const lostRef = useRef(false);
 
   // The position is read through a ref inside the frame loop so that a GPS
   // tick — which arrives roughly once a second — cannot tear the loop down.
@@ -120,7 +128,7 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
         go({
           name: "reveal",
           entry: entryFromCatch(outcome.body.catch),
-          isNew: true,
+          isNew: outcome.isNew,
           firstSpotter: outcome.body.firstSpotter === true,
           localSaveFailed: outcome.localSaveFailed,
         });
@@ -146,15 +154,24 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
       const live = usePlanes.getState().planes.get(hex);
       if (live) {
         missingSinceRef.current = null;
-        if (faded) setFaded(false);
+        if (fadedRef.current) {
+          fadedRef.current = false;
+          setFaded(false);
+        }
       } else {
         missingSinceRef.current ??= now;
         const goneFor = now - missingSinceRef.current;
         if (goneFor > LOST_GRACE_MS) {
-          if (!lost) setLost(true);
+          if (!lostRef.current) {
+            lostRef.current = true;
+            setLost(true);
+          }
           return;
         }
-        if (!faded) setFaded(true);
+        if (!fadedRef.current) {
+          fadedRef.current = true;
+          setFaded(true);
+        }
       }
       const ac = live ?? lastPlaneRef.current;
       if (!ac || submittingRef.current) return;
@@ -241,9 +258,12 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
       // capture: a stuck submittingRef silently freezes the ring forever.
       submittingRef.current = false;
       progressRef.current = 0;
+      fadedRef.current = false;
+      lostRef.current = false;
     };
-    // Deliberately not depending on `position` — see posRef above.
-  }, [armed, hex, aimRef, go, faded, lost]);
+    // Deliberately not depending on `position` (see posRef) or on `faded`/
+    // `lost` (see fadedRef/lostRef) — the loop must survive a feed gap.
+  }, [armed, hex, aimRef, go]);
 
   // Drag-to-aim fallback for devices without a compass.
   const dragLast = useRef<{ x: number; y: number } | null>(null);

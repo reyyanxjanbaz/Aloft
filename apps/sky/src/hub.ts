@@ -78,6 +78,18 @@ const PLAYER_POSITION_MAX_AGE_MS = 5 * 60_000;
  * capture.
  */
 const PLAYER_POSITION_TOLERANCE_KM = CAPTURE_RADIUS_KM * 2;
+/**
+ * A player cannot plausibly travel faster than this between two catches. Set
+ * well above airliner cruise (~900 km/h) so someone catching planes from a
+ * window seat is never flagged; only globe-spanning jumps — the signature of a
+ * client echoing aircrafts' own broadcast positions from anywhere on Earth —
+ * exceed it.
+ */
+const MAX_PLAYER_SPEED_KMH = 1500;
+/** Jumps shorter than this are never treated as teleporting, whatever the implied speed. */
+const CATCH_TELEPORT_MIN_KM = 25;
+/** How long a player's last catch location is retained for the plausibility check. */
+const CATCH_POSITION_TTL_MS = 6 * 60 * 60_000;
 
 interface AirframeHistory {
   latest: AircraftState;
@@ -98,6 +110,8 @@ export class SkyHub {
   private history = new Map<string, AirframeHistory>();
   /** playerId → last position we saw them subscribe from. */
   private playerPositions = new Map<string, PlayerPosition>();
+  /** playerId → where/when they last landed a validated catch, for the travel-plausibility check. */
+  private lastCatchPositions = new Map<string, PlayerPosition>();
   /** cellKey → in-flight or recent on-demand catch-validation poll. */
   private onDemandPolls = new Map<string, { at: number; promise: Promise<void> }>();
 
@@ -191,6 +205,25 @@ export class SkyHub {
           return { ok: false, reason: "claimed location doesn't match your reported position" };
         }
       }
+
+      // Travel-plausibility. The drift check above compares against a position
+      // the client also supplies over the socket, so a client echoing a
+      // plane's own broadcast position passes it. This check instead uses
+      // something the client cannot fake away — its own catch history — and
+      // rejects a claimed location no real journey could reach from the last
+      // catch in the time elapsed. It's what stops a single identity from
+      // farming rare airframes all over the globe. Catch timestamps are
+      // pinned to within CATCH_TIME_SLACK_MS of real time (checked above), so
+      // the elapsed interval can't be inflated to sneak a jump through.
+      const last = this.lastCatchPositions.get(claimingPlayerId);
+      if (last) {
+        const jumpKm = distanceM(last.lat, last.lon, lat, lon) / 1000;
+        const elapsedH = Math.max(ts - last.ts, 1) / 3_600_000;
+        if (jumpKm > CATCH_TELEPORT_MIN_KM && jumpKm / elapsedH > MAX_PLAYER_SPEED_KMH) {
+          return { ok: false, reason: "claimed location is impossibly far from your last catch" };
+        }
+      }
+      this.lastCatchPositions.set(claimingPlayerId, { lat, lon, ts });
     }
 
     return {
@@ -224,6 +257,10 @@ export class SkyHub {
     const posCutoff = now - PLAYER_POSITION_MAX_AGE_MS;
     for (const [playerId, pos] of this.playerPositions) {
       if (pos.ts < posCutoff) this.playerPositions.delete(playerId);
+    }
+    const catchCutoff = now - CATCH_POSITION_TTL_MS;
+    for (const [playerId, pos] of this.lastCatchPositions) {
+      if (pos.ts < catchCutoff) this.lastCatchPositions.delete(playerId);
     }
   }
 

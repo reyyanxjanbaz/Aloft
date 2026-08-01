@@ -6,7 +6,7 @@ import { RadarView } from "./features/radar/RadarView";
 import { RevealView } from "./features/reveal/RevealView";
 import { SocialView } from "./features/social/SocialView";
 import { SystemView } from "./features/system/SystemView";
-import { flushPendingCatch } from "./lib/catchQueue";
+import { flushPendingCatches } from "./lib/catchQueue";
 import { usePlayer } from "./state/player";
 import { useGeolocation, type PlayerPosition } from "./lib/useGeolocation";
 import { isTab, useApp } from "./state/app";
@@ -51,8 +51,8 @@ export function App() {
   useEffect(() => {
     let alive = true;
     const flush = () => {
-      void flushPendingCatch().then((outcome) => {
-        if (alive && outcome?.status === "caught") setConfirmed(true);
+      void flushPendingCatches().then((outcomes) => {
+        if (alive && outcomes.some((o) => o.status === "caught")) setConfirmed(true);
       });
     };
     flush();
