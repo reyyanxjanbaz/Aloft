@@ -12,9 +12,14 @@ import "./styles/boot.css";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { UpdateToast } from "./components/UpdateToast";
+import { primeOrientation } from "./lib/orientation";
 import { registerServiceWorker } from "./lib/swUpdate";
 
 registerServiceWorker();
+
+// Arm the tilt sensor from the very first tap anywhere — including the one that
+// opens the Hangar. Waiting until the Hangar mounted meant the foil never lit.
+primeOrientation();
 
 /** Last line of defence: a render crash shows a readout, not a blank screen. */
 const FAULT = (

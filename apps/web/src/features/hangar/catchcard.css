@@ -44,11 +44,16 @@
   transition: opacity var(--dur) var(--ease);
 }
 
+/*
+ * The 3D stage. It must NOT clip: `overflow` other than visible forces the used
+ * value of transform-style back to `flat`, which silently flattens every
+ * translateZ inside and costs the card all of its depth. Clipping happens on
+ * .cc__clip, which is a flat subtree and can afford it.
+ */
 .cc__card {
   position: absolute;
   inset: 0;
   z-index: 1;
-  overflow: hidden;
   border: 1px solid var(--rule);
   border-radius: var(--r-lg);
   background: var(--void);
@@ -57,6 +62,15 @@
   transition: border-color var(--dur) var(--ease);
   box-shadow: 0 16px 34px -20px #000;
   will-change: transform;
+}
+
+/* Flat, clipped surface for the grid and the foil sheen. */
+.cc__clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  pointer-events: none;
 }
 
 .cc:focus-visible {
@@ -196,6 +210,8 @@
   text-align: left;
   background: linear-gradient(0deg, var(--void) 64%, transparent);
   border-top: 1px solid var(--rule);
+  /* Rounded itself: it sits above the clip layer so it can reach the corners. */
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
   transform: translateZ(20px);
 }
 

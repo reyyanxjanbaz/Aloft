@@ -1,18 +1,11 @@
 import { useEffect, useRef } from "react";
+import { orientationAccess } from "../../lib/orientation";
+import { remapForScreen, tiltVector } from "./tiltMath";
 
 const clamp = (v: number, a = -1, b = 1): number => Math.min(Math.max(v, a), b);
 
-/** How many degrees of tilt map to the full effect, and the resting pitch of a
- *  phone held up to look at it (screen tilted back ~45°). */
-const TILT_RANGE_DEG = 22;
-const NEUTRAL_PITCH_DEG = 45;
-
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-}
-
-interface OrientationPermissionAPI {
-  requestPermission?: () => Promise<"granted" | "denied" | "default">;
 }
 
 /** Screen rotation in degrees, so beta/gamma can be remapped in landscape. */
@@ -33,13 +26,11 @@ function screenAngle(): number {
  * element; the cards inside read them through the cascade, so there's no
  * per-card state and no per-card listener.
  *
- * Phones use the gyroscope (`deviceorientation`). iOS gates the sensor behind a
- * permission that can only be requested from a genuine user gesture and only in
- * a secure (HTTPS) context, so we request it on the player's first tap in the
- * Hangar (a `click`/`touchend` — the triggers iOS actually honours). Android
- * and other platforms expose the sensor without a prompt, so we attach right
- * away. Desktop falls back to the pointer. Under prefers-reduced-motion nothing
- * attaches and the cards stay flat.
+ * The sensor permission is handled app-wide (lib/orientation) rather than here,
+ * so the tap that opens the Hangar is itself the gesture that unlocks it. The
+ * resting pitch is calibrated from the first readings instead of assumed, so
+ * the light sweeps symmetrically whether the phone is flat on a table or held
+ * up to read. Under prefers-reduced-motion nothing attaches and cards stay flat.
  */
 export function useCollectionTilt<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -55,6 +46,7 @@ export function useCollectionTilt<T extends HTMLElement>() {
     let cx = 0;
     let cy = 0;
     let on = 0;
+    let alive = true;
 
     const frame = () => {
       cx += (tx - cx) * 0.12;
@@ -82,7 +74,10 @@ export function useCollectionTilt<T extends HTMLElement>() {
       targetOn = 1;
       kick();
     };
-    const onPointerLeave = () => {
+    const onPointerLeave = (e: PointerEvent) => {
+      // A finger lifting also "leaves" the document; letting that reset the
+      // light would fight the gyroscope on every tap.
+      if (e.pointerType === "touch") return;
       tx = 0;
       ty = 0;
       targetOn = 0;
@@ -92,58 +87,35 @@ export function useCollectionTilt<T extends HTMLElement>() {
     document.addEventListener("pointerleave", onPointerLeave);
 
     // ── gyroscope ──
+    // The posture the phone is first seen in becomes the resting position, then
+    // drifts slowly toward the player's actual average hold.
+    let neutralPitch: number | null = null;
+
     const onOrient = (e: DeviceOrientationEvent) => {
       if (e.beta == null || e.gamma == null) return;
-      // Remap for the current screen rotation so "roll" and "pitch" stay
-      // consistent whichever way the phone is held.
-      let g = e.gamma; // left/right roll, -90..90
-      let b = e.beta; // front/back pitch, -180..180
-      const angle = screenAngle();
-      if (angle === 90) {
-        g = e.beta;
-        b = -e.gamma;
-      } else if (angle === 270 || angle === -90) {
-        g = -e.beta;
-        b = e.gamma;
-      } else if (angle === 180) {
-        g = -e.gamma;
-        b = -e.beta;
-      }
-      tx = clamp(g / TILT_RANGE_DEG);
-      ty = clamp((b - NEUTRAL_PITCH_DEG) / TILT_RANGE_DEG);
+      const { pitch, roll } = remapForScreen(e.beta, e.gamma, screenAngle());
+      if (neutralPitch === null) neutralPitch = pitch;
+      else neutralPitch += (pitch - neutralPitch) * 0.002; // slow re-centring
+      const v = tiltVector(roll, pitch, neutralPitch);
+      tx = v.tx;
+      ty = v.ty;
       targetOn = 1;
       kick();
     };
 
+    // Some Android builds only emit the absolute variant.
+    const ORIENT_EVENTS = ["deviceorientation", "deviceorientationabsolute"] as const;
     let detachGyro = () => {};
-    const DOE = typeof window !== "undefined" ? (window.DeviceOrientationEvent as unknown as OrientationPermissionAPI | undefined) : undefined;
-    if (DOE) {
-      if (typeof DOE.requestPermission === "function") {
-        // iOS: ask on the first real tap; both click and touchend are triggers
-        // iOS honours (pointerdown is not reliably one).
-        const requestOnce = () => {
-          document.removeEventListener("click", requestOnce);
-          document.removeEventListener("touchend", requestOnce);
-          DOE.requestPermission!()
-            .then((state) => {
-              if (state === "granted") window.addEventListener("deviceorientation", onOrient);
-            })
-            .catch(() => {});
-        };
-        document.addEventListener("click", requestOnce);
-        document.addEventListener("touchend", requestOnce);
-        detachGyro = () => {
-          document.removeEventListener("click", requestOnce);
-          document.removeEventListener("touchend", requestOnce);
-          window.removeEventListener("deviceorientation", onOrient);
-        };
-      } else {
-        window.addEventListener("deviceorientation", onOrient);
-        detachGyro = () => window.removeEventListener("deviceorientation", onOrient);
-      }
-    }
+    void orientationAccess().then((ok) => {
+      if (!ok || !alive) return;
+      for (const name of ORIENT_EVENTS) window.addEventListener(name, onOrient as EventListener);
+      detachGyro = () => {
+        for (const name of ORIENT_EVENTS) window.removeEventListener(name, onOrient as EventListener);
+      };
+    });
 
     return () => {
+      alive = false;
       window.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("pointerleave", onPointerLeave);
       detachGyro();

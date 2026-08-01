@@ -26,7 +26,16 @@ export function CatchCard({ entry, onOpen }: { entry: HangarEntry; onOpen: () =>
     >
       <span className="cc__glow" aria-hidden="true" />
       <span className="cc__card">
-        <span className="cc__layer cc__grid" aria-hidden="true" />
+        {/*
+         * The flat, clipped surface. overflow:hidden forces transform-style
+         * back to flat, so it has to live on its own layer — putting it on
+         * .cc__card silently killed every translateZ below and the card lost
+         * all of its depth.
+         */}
+        <span className="cc__clip" aria-hidden="true">
+          <span className="cc__layer cc__grid" />
+          <span className="cc__layer cc__sheen" />
+        </span>
         <span className="cc__chip">
           <i aria-hidden="true" />
           {RARITY_LABEL[entry.rarity]}
@@ -34,7 +43,6 @@ export function CatchCard({ entry, onOpen }: { entry: HangarEntry; onOpen: () =>
         <span className="cc__layer cc__subject" aria-hidden="true">
           <AircraftGlyph typeIcao={entry.typeIcao} />
         </span>
-        <span className="cc__layer cc__sheen" aria-hidden="true" />
         <span className="cc__layer cc__ticks" aria-hidden="true">
           <i />
           <i />
