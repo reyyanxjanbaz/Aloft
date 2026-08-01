@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements, RARITY_ORDER, streakDays } from "@aloft/shared";
 import { AchievementIcon } from "../../ui/AchievementIcon";
@@ -7,10 +7,11 @@ import { RARITY_LABEL } from "../../ui/rarity";
 import { Stage } from "../reveal/Stage";
 import { ShareCardButton } from "../share/ShareCardButton";
 import type { PlayerPosition } from "../../lib/useGeolocation";
-import { AircraftGlyph } from "./AircraftGlyph";
+import { CatchCard } from "./CatchCard";
 import { listCatches, type HangarEntry } from "./db";
 import { FleetStatus } from "./FleetStatus";
 import { LiveStatus } from "./LiveStatus";
+import { useDialog } from "./useDialog";
 import "./hangar.css";
 
 type Filter = "all" | "rare";
@@ -21,6 +22,7 @@ export function HangarView({ position }: { position: PlayerPosition }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [unreadable, setUnreadable] = useState(false);
   const snapshotRef = useRef<(() => string | null) | null>(null);
+  const closeViewer = useCallback(() => setSelected(null), []);
 
   useEffect(() => {
     // Without this catch, a storage failure (private mode, a blocked upgrade,
@@ -141,26 +143,7 @@ export function HangarView({ position }: { position: PlayerPosition }) {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: Math.min(i * 0.03, 0.4), duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
                   >
-                    <button
-                      className="card"
-                      style={{ ["--rarity" as string]: `var(--rarity-${e.rarity})` }}
-                      onClick={() => setSelected(e)}
-                    >
-                      <AircraftGlyph typeIcao={e.typeIcao} />
-                      <span className="card__type">{e.typeLabel}</span>
-                      <span className="card__ident mono">
-                        {e.callsign || e.reg || e.hex.toUpperCase()}
-                      </span>
-                      <span className="card__foot">
-                        <span className="card__rarity">{RARITY_LABEL[e.rarity]}</span>
-                        <span className="card__date mono">
-                          {new Date(e.caughtAt).toLocaleDateString(undefined, {
-                            day: "2-digit",
-                            month: "short",
-                          })}
-                        </span>
-                      </span>
-                    </button>
+                    <CatchCard entry={e} onOpen={() => setSelected(e)} />
                   </motion.li>
                 ))}
               </ul>
@@ -170,31 +153,60 @@ export function HangarView({ position }: { position: PlayerPosition }) {
       )}
 
       {selected && (
-        <div className="viewer" role="dialog" aria-label={selected.typeLabel}>
-          <div className="viewer__stage">
-            <Stage typeIcao={selected.typeIcao} callsign={selected.callsign} snapshotRef={snapshotRef} />
-          </div>
-          <div className="viewer__bar">
-            <div className="viewer__ident">
-              <strong>{selected.typeLabel}</strong>
-              <span className="mono">
-                {selected.callsign || selected.reg || selected.hex.toUpperCase()} ·{" "}
-                {RARITY_LABEL[selected.rarity]}
-              </span>
-              <LiveStatus hex={selected.hex} position={position} />
-            </div>
-            <ShareCardButton
-              entry={selected}
-              firstSpotter={false}
-              snapshotRef={snapshotRef}
-              className="btn btn--quiet"
-            />
-            <button className="icon-btn" onClick={() => setSelected(null)} aria-label="Close viewer">
-              <IconClose size={20} weight="bold" />
-            </button>
-          </div>
-        </div>
+        <Viewer entry={selected} position={position} snapshotRef={snapshotRef} onClose={closeViewer} />
       )}
+    </div>
+  );
+}
+
+/**
+ * The full-screen model viewer, as a real modal dialog — focus moves in on
+ * open, Tab is trapped, Escape closes, and focus returns to the card that
+ * opened it. `onClose` is stabilised by the caller so the trap doesn't re-arm
+ * on every render.
+ */
+function Viewer({
+  entry,
+  position,
+  snapshotRef,
+  onClose,
+}: {
+  entry: HangarEntry;
+  position: PlayerPosition;
+  snapshotRef: React.MutableRefObject<(() => string | null) | null>;
+  onClose: () => void;
+}) {
+  const ref = useDialog<HTMLDivElement>(onClose);
+  return (
+    <div
+      ref={ref}
+      className="viewer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={entry.typeLabel}
+      tabIndex={-1}
+    >
+      <div className="viewer__stage">
+        <Stage typeIcao={entry.typeIcao} callsign={entry.callsign} snapshotRef={snapshotRef} />
+      </div>
+      <div className="viewer__bar">
+        <div className="viewer__ident">
+          <strong>{entry.typeLabel}</strong>
+          <span className="mono">
+            {entry.callsign || entry.reg || entry.hex.toUpperCase()} · {RARITY_LABEL[entry.rarity]}
+          </span>
+          <LiveStatus hex={entry.hex} position={position} />
+        </div>
+        <ShareCardButton
+          entry={entry}
+          firstSpotter={false}
+          snapshotRef={snapshotRef}
+          className="btn btn--quiet"
+        />
+        <button className="icon-btn" onClick={onClose} aria-label="Close viewer">
+          <IconClose size={20} weight="bold" />
+        </button>
+      </div>
     </div>
   );
 }

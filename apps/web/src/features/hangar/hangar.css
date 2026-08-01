@@ -38,8 +38,8 @@
 }
 
 .segmented__opt {
-  min-height: 34px;
-  padding: 0 var(--s-3);
+  min-height: 44px;
+  padding: 0 var(--s-4);
   font-family: var(--font-mono);
   font-size: var(--t-label);
   letter-spacing: 0.14em;
@@ -87,11 +87,16 @@
 
 .hangar__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: var(--s-2);
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  gap: var(--s-3);
   list-style: none;
 }
 
+/*
+ * The flat collection tile. The Hangar's own grid now uses the foil CatchCard
+ * (catchcard.css); these rules remain because the Spotters feed (social.css)
+ * still renders friends' catches with the same .card markup.
+ */
 .card {
   display: flex;
   flex-direction: column;
@@ -236,9 +241,4 @@
 
 .live--pending .live__text {
   color: var(--ink-3);
-}
-
-/* Room for the share control beside the close button in the viewer. */
-.viewer__bar {
-  gap: var(--s-3);
 }
