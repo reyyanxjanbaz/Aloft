@@ -1,31 +1,129 @@
-.hangar__streak {
+/* ── Header + summary ribbon ──────────────────────────── */
+
+.hangar__head {
+  align-items: center;
+}
+
+.hangar__ribbon {
+  display: flex;
+  gap: var(--s-4);
+  color: var(--ink-2);
+  font-size: var(--t-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hangar__ribbon b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.hangar__ribbon-fire {
   display: inline-flex;
   align-items: center;
   gap: var(--s-1);
   color: var(--amber);
-  font-family: var(--font-mono);
-  font-size: var(--t-data-sm);
 }
 
-.hangar__totals {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--s-3);
-  padding-bottom: var(--s-4);
-  border-bottom: 1px solid var(--rule);
+.hangar__ribbon-fire b {
+  color: var(--amber);
 }
 
-.hangar__section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-3);
-}
+/* ── Tools row: layout toggle + badges pill ───────────── */
 
-.hangar__filters {
+.hangar__tools {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s-3);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 44px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.pill:hover {
+  border-color: var(--rule-hot);
+  color: var(--ink);
+}
+
+.pill b {
+  color: var(--phos);
+  font-weight: 600;
+}
+
+/* ── Gallery: featured hero + collection bar ───────────── */
+
+.hangar__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) 1fr;
+  gap: var(--s-6);
+  align-items: center;
+}
+
+.hangar__hero .cc {
+  max-width: 180px;
+}
+
+.hangar__hero-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.hangar__hero-type {
+  font-family: var(--font-display);
+  font-size: var(--t-display);
+  font-weight: 600;
+  line-height: 1.05;
+  margin-top: var(--s-1);
+}
+
+.hangar__hero-sub {
+  color: var(--phos);
+  font-size: var(--t-small);
+  letter-spacing: 0.04em;
+}
+
+.hangar__hero-row {
+  display: flex;
+  gap: var(--s-6);
+  margin-top: var(--s-3);
+}
+
+.hangar__collbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+@media (max-width: 480px) {
+  .hangar__hero {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+  .hangar__hero .cc {
+    max-width: 160px;
+  }
+  .hangar__hero-row {
+    justify-content: center;
+  }
 }
 
 /* ── Segmented control ────────────────────────────────── */
@@ -241,4 +339,160 @@
 
 .live--pending .live__text {
   color: var(--ink-3);
+}
+
+/* ── Deck (coverflow) ─────────────────────────────────── */
+
+.deck {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.deck__view {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  height: 360px;
+  overflow: hidden;
+  perspective: 1300px;
+  touch-action: pan-y;
+}
+
+.deck__card {
+  position: absolute;
+  top: var(--s-2);
+  left: 50%;
+  will-change: transform, opacity;
+  transition: transform 520ms var(--ease-out), opacity 520ms var(--ease);
+}
+
+.deck__view--dragging {
+  cursor: grabbing;
+}
+
+.deck__view--dragging .deck__card {
+  transition: none;
+}
+
+.deck__detail {
+  text-align: center;
+  min-height: 92px;
+  animation: deck-fade var(--dur) var(--ease);
+}
+
+@keyframes deck-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.deck__detail-type {
+  font-family: var(--font-display);
+  font-size: var(--t-h1);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.deck__detail-sub {
+  color: var(--phos);
+  font-size: var(--t-small);
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.deck__detail-row {
+  display: inline-flex;
+  gap: var(--s-6);
+  margin-top: var(--s-3);
+}
+
+.deck__detail-row .readout {
+  align-items: center;
+  text-align: center;
+}
+
+.deck__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.deck__dots {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.deck__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--rule-hot);
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.deck__dot--on {
+  background: var(--phos);
+  transform: scale(1.4);
+}
+
+/* ── Stats sheet (badges + fleet, on demand) ──────────── */
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: color-mix(in srgb, var(--void) 74%, transparent);
+  animation: scrim-in var(--dur) var(--ease);
+}
+
+@keyframes scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 82vh;
+  overflow-y: auto;
+  background: var(--deck);
+  border: 1px solid var(--rule);
+  border-bottom: 0;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  padding: var(--s-4) var(--s-4) calc(var(--safe-b) + var(--s-4));
+  animation: sheet-up var(--dur-slow) var(--ease-out);
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+.sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-4);
+}
+
+.sheet__title {
+  font-family: var(--font-display);
+  font-size: var(--t-h1);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deck__card,
+  .deck__detail,
+  .sheet-scrim,
+  .sheet {
+    animation: none;
+    transition: none;
+  }
 }

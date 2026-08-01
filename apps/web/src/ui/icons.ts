@@ -17,6 +17,8 @@ export {
   ArrowUp as IconUp,
   ArrowRight as IconArrow,
   CaretLeft as IconBack,
+  CaretLeft as IconCaretLeft,
+  CaretRight as IconCaretRight,
   X as IconClose,
   Plus as IconAdd,
   Check as IconCheck,

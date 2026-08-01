@@ -2,33 +2,42 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements, RARITY_ORDER, streakDays } from "@aloft/shared";
 import { AchievementIcon } from "../../ui/AchievementIcon";
-import { IconClose, IconStreak } from "../../ui/icons";
+import { IconClose, IconStreak, IconTrophy } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
 import { Stage } from "../reveal/Stage";
 import { ShareCardButton } from "../share/ShareCardButton";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { CatchCard } from "./CatchCard";
+import { DeckView } from "./DeckView";
 import { listCatches, type HangarEntry } from "./db";
 import { FleetStatus } from "./FleetStatus";
 import { LiveStatus } from "./LiveStatus";
+import { useCollectionTilt } from "./useCollectionTilt";
 import { useDialog } from "./useDialog";
 import "./hangar.css";
 
 type Filter = "all" | "rare";
+type Mode = "gallery" | "deck";
 
 export function HangarView({ position }: { position: PlayerPosition }) {
   const [entries, setEntries] = useState<HangarEntry[] | null>(null);
   const [selected, setSelected] = useState<HangarEntry | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [mode, setMode] = useState<Mode>("gallery");
+  const [statsOpen, setStatsOpen] = useState(false);
   const [unreadable, setUnreadable] = useState(false);
   const snapshotRef = useRef<(() => string | null) | null>(null);
   const closeViewer = useCallback(() => setSelected(null), []);
+  const closeStats = useCallback(() => setStatsOpen(false), []);
+  // One light source for the whole collection — tilting the phone (or moving
+  // the pointer) makes every foil card catch the light together.
+  const tiltRef = useCollectionTilt<HTMLDivElement>();
 
   useEffect(() => {
     // Without this catch, a storage failure (private mode, a blocked upgrade,
     // a corrupt database) left entries null forever and the hangar rendered
-    // "Nothing logged yet" — telling a player with a full collection that
-    // they had caught nothing.
+    // "Nothing logged yet" — telling a player with a full collection they had
+    // caught nothing.
     void listCatches()
       .then(setEntries)
       .catch((err) => {
@@ -38,9 +47,7 @@ export function HangarView({ position }: { position: PlayerPosition }) {
   }, []);
 
   const all = entries ?? [];
-  // Recomputed only when the collection changes: evaluateAchievements and
-  // streakDays walk every catch, and this used to run on every render —
-  // including each filter toggle and every viewer open.
+  // Recomputed only when the collection changes: these walk every catch.
   const { points, streak, earned } = useMemo(
     () => ({
       points: all.reduce((sum, e) => sum + (RARITY_ORDER.indexOf(e.rarity) + 1) ** 2, 0),
@@ -49,34 +56,66 @@ export function HangarView({ position }: { position: PlayerPosition }) {
     }),
     [entries]
   );
-  const shown = useMemo(
-    () =>
+  const featured = all[0];
+  // The grid shows the collection minus the featured hero, filtered.
+  const galleryRest = useMemo(() => {
+    const base =
       filter === "rare"
         ? all.filter((e) => RARITY_ORDER.indexOf(e.rarity) >= RARITY_ORDER.indexOf("rare"))
-        : all,
-    [entries, filter]
-  );
+        : all;
+    return base.filter((e) => e.id !== featured?.id);
+  }, [entries, filter]);
+  const hexes = useMemo(() => [...new Set(all.map((e) => e.hex.toLowerCase()))], [entries]);
 
   return (
-    <div className="screen hangar">
-      <header className="screen__head">
+    <div className="screen hangar" ref={tiltRef}>
+      <header className="screen__head hangar__head">
         <h1 className="screen__title">Hangar</h1>
-        {streak > 1 && (
-          <span className="hangar__streak">
-            <IconStreak size={14} weight="fill" />
-            <span className="mono">{streak}</span>
-            <span className="unit">day streak</span>
-          </span>
+        {all.length > 0 && (
+          <div className="hangar__ribbon">
+            <span>
+              <b className="mono">{all.length}</b> airframes
+            </span>
+            <span>
+              <b className="mono">{points}</b> pts
+            </span>
+            {streak > 1 && (
+              <span className="hangar__ribbon-fire">
+                <IconStreak size={12} weight="fill" />
+                <b className="mono">{streak}</b> day
+              </span>
+            )}
+          </div>
         )}
       </header>
 
-      <dl className="hangar__totals">
-        <Total label="Airframes" value={all.length} />
-        <Total label="Rarity points" value={points} />
-        <Total label="Badges" value={`${earned.size}/${ACHIEVEMENTS.length}`} />
-      </dl>
-
-      {all.length > 0 && <FleetStatus hexes={[...new Set(all.map((e) => e.hex.toLowerCase()))]} />}
+      {all.length > 0 && (
+        <div className="hangar__tools">
+          <div className="segmented" role="group" aria-label="Collection layout">
+            <button
+              className={mode === "gallery" ? "segmented__opt segmented__opt--on" : "segmented__opt"}
+              onClick={() => setMode("gallery")}
+              aria-pressed={mode === "gallery"}
+            >
+              Gallery
+            </button>
+            <button
+              className={mode === "deck" ? "segmented__opt segmented__opt--on" : "segmented__opt"}
+              onClick={() => setMode("deck")}
+              aria-pressed={mode === "deck"}
+            >
+              Deck
+            </button>
+          </div>
+          <button className="pill" onClick={() => setStatsOpen(true)}>
+            <IconTrophy size={13} weight="bold" />
+            Badges
+            <b className="mono">
+              {earned.size}/{ACHIEVEMENTS.length}
+            </b>
+          </button>
+        </div>
+      )}
 
       {unreadable ? (
         <p className="empty">
@@ -92,69 +131,149 @@ export function HangarView({ position }: { position: PlayerPosition }) {
           <br />
           Find a contact inside the capture ring and hunt it down.
         </p>
+      ) : mode === "gallery" ? (
+        <Gallery featured={featured!} rest={galleryRest} filter={filter} onFilter={setFilter} onOpen={setSelected} />
       ) : (
-        <>
-          <section className="hangar__section">
-            <h2 className="label">Badges</h2>
-            <ul className="hangar__badges">
-              {ACHIEVEMENTS.map((a) => {
-                const has = earned.has(a.id);
-                return (
-                  <li
-                    key={a.id}
-                    className={has ? "badge badge--earned" : "badge"}
-                    title={`${a.name} — ${a.description}`}
-                  >
-                    <AchievementIcon name={a.icon} size={16} weight={has ? "fill" : "regular"} />
-                    <span>{a.name}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-
-          <section className="hangar__section">
-            <div className="hangar__filters">
-              <h2 className="label">Collection</h2>
-              <div className="segmented">
-                <button
-                  className={filter === "all" ? "segmented__opt segmented__opt--on" : "segmented__opt"}
-                  onClick={() => setFilter("all")}
-                >
-                  All
-                </button>
-                <button
-                  className={filter === "rare" ? "segmented__opt segmented__opt--on" : "segmented__opt"}
-                  onClick={() => setFilter("rare")}
-                >
-                  Rare+
-                </button>
-              </div>
-            </div>
-
-            {shown.length === 0 ? (
-              <p className="empty">Nothing rare yet. Keep watching the ring.</p>
-            ) : (
-              <ul className="hangar__grid">
-                {shown.map((e, i) => (
-                  <motion.li
-                    key={e.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: Math.min(i * 0.03, 0.4), duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                  >
-                    <CatchCard entry={e} onOpen={() => setSelected(e)} />
-                  </motion.li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </>
+        <DeckView entries={all} onOpen={setSelected} />
       )}
 
       {selected && (
         <Viewer entry={selected} position={position} snapshotRef={snapshotRef} onClose={closeViewer} />
       )}
+      {statsOpen && <StatsSheet hexes={hexes} earned={earned} onClose={closeStats} />}
+    </div>
+  );
+}
+
+function Gallery({
+  featured,
+  rest,
+  filter,
+  onFilter,
+  onOpen,
+}: {
+  featured: HangarEntry;
+  rest: HangarEntry[];
+  filter: Filter;
+  onFilter: (f: Filter) => void;
+  onOpen: (e: HangarEntry) => void;
+}) {
+  const ident = featured.callsign || featured.reg || featured.hex.toUpperCase();
+  const caught = new Date(featured.caughtAt).toLocaleDateString(undefined, { day: "2-digit", month: "short" });
+  return (
+    <>
+      <section className="hangar__hero">
+        <CatchCard entry={featured} onOpen={() => onOpen(featured)} />
+        <div className="hangar__hero-meta">
+          <span className="label">Latest catch</span>
+          <h2 className="hangar__hero-type">{featured.typeLabel}</h2>
+          <p className="hangar__hero-sub mono">
+            {ident} · {RARITY_LABEL[featured.rarity]}
+          </p>
+          <dl className="hangar__hero-row">
+            <HeroStat label="Altitude" value={featured.altFt > 0 ? Math.round(featured.altFt).toLocaleString() : "Ground"} unit={featured.altFt > 0 ? "ft" : ""} />
+            <HeroStat label="Range" value={featured.distanceKm.toFixed(1)} unit="km" />
+            <HeroStat label="Caught" value={caught} unit="" />
+          </dl>
+        </div>
+      </section>
+
+      <div className="hangar__collbar">
+        <span className="label">Collection</span>
+        <div className="segmented" role="group" aria-label="Filter collection">
+          <button
+            className={filter === "all" ? "segmented__opt segmented__opt--on" : "segmented__opt"}
+            onClick={() => onFilter("all")}
+            aria-pressed={filter === "all"}
+          >
+            All
+          </button>
+          <button
+            className={filter === "rare" ? "segmented__opt segmented__opt--on" : "segmented__opt"}
+            onClick={() => onFilter("rare")}
+            aria-pressed={filter === "rare"}
+          >
+            Rare+
+          </button>
+        </div>
+      </div>
+
+      {rest.length === 0 ? (
+        <p className="empty">Nothing else {filter === "rare" ? "rare " : ""}yet. Keep watching the ring.</p>
+      ) : (
+        <ul className="hangar__grid">
+          {rest.map((e, i) => (
+            <motion.li
+              key={e.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i * 0.03, 0.4), duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <CatchCard entry={e} onOpen={() => onOpen(e)} />
+            </motion.li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function HeroStat({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <div className="readout">
+      <dt className="label">{label}</dt>
+      <dd className="readout__value">
+        {value} {unit && <span className="unit">{unit}</span>}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Badges and the live fleet, in an on-demand sheet. Kept off the main view so
+ * the collection is the hero — and so the fleet's per-airframe network lookups
+ * only fire when the player actually opens this, not on every hangar visit.
+ */
+function StatsSheet({
+  hexes,
+  earned,
+  onClose,
+}: {
+  hexes: string[];
+  earned: Set<string>;
+  onClose: () => void;
+}) {
+  const ref = useDialog<HTMLDivElement>(onClose);
+  return (
+    <div className="sheet-scrim" onClick={onClose}>
+      <div
+        ref={ref}
+        className="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Badges and fleet"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sheet__head">
+          <h2 className="sheet__title">Badges</h2>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <IconClose size={18} weight="bold" />
+          </button>
+        </div>
+        <ul className="hangar__badges">
+          {ACHIEVEMENTS.map((a) => {
+            const has = earned.has(a.id);
+            return (
+              <li key={a.id} className={has ? "badge badge--earned" : "badge"} title={`${a.name} — ${a.description}`}>
+                <AchievementIcon name={a.icon} size={16} weight={has ? "fill" : "regular"} />
+                <span>{a.name}</span>
+              </li>
+            );
+          })}
+        </ul>
+        {hexes.length > 0 && <FleetStatus hexes={hexes} />}
+      </div>
     </div>
   );
 }
@@ -162,8 +281,7 @@ export function HangarView({ position }: { position: PlayerPosition }) {
 /**
  * The full-screen model viewer, as a real modal dialog — focus moves in on
  * open, Tab is trapped, Escape closes, and focus returns to the card that
- * opened it. `onClose` is stabilised by the caller so the trap doesn't re-arm
- * on every render.
+ * opened it.
  */
 function Viewer({
   entry,
@@ -178,14 +296,7 @@ function Viewer({
 }) {
   const ref = useDialog<HTMLDivElement>(onClose);
   return (
-    <div
-      ref={ref}
-      className="viewer"
-      role="dialog"
-      aria-modal="true"
-      aria-label={entry.typeLabel}
-      tabIndex={-1}
-    >
+    <div ref={ref} className="viewer" role="dialog" aria-modal="true" aria-label={entry.typeLabel} tabIndex={-1}>
       <div className="viewer__stage">
         <Stage typeIcao={entry.typeIcao} callsign={entry.callsign} snapshotRef={snapshotRef} />
       </div>
@@ -197,25 +308,11 @@ function Viewer({
           </span>
           <LiveStatus hex={entry.hex} position={position} />
         </div>
-        <ShareCardButton
-          entry={entry}
-          firstSpotter={false}
-          snapshotRef={snapshotRef}
-          className="btn btn--quiet"
-        />
+        <ShareCardButton entry={entry} firstSpotter={false} snapshotRef={snapshotRef} className="btn btn--quiet" />
         <button className="icon-btn" onClick={onClose} aria-label="Close viewer">
           <IconClose size={20} weight="bold" />
         </button>
       </div>
-    </div>
-  );
-}
-
-function Total({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="readout">
-      <dt className="label">{label}</dt>
-      <dd className="readout__value data--xl">{value}</dd>
     </div>
   );
 }
