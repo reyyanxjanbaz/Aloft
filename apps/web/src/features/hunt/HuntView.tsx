@@ -9,6 +9,7 @@ import { IconClose, IconHunt, IconWarning } from "../../ui/icons";
 import { entryFromCatch } from "../hangar/db";
 import { BearingTape, PX_PER_DEG } from "./BearingTape";
 import { CAPTURE_SECONDS, computeAimSolution, stepProgress } from "./aimMath";
+import { createCameraSession, type CameraState } from "./cameraSession";
 import { Reticle, RING_C } from "./Reticle";
 import { useOrientation } from "./useOrientation";
 import "./hunt.css";
@@ -47,7 +48,7 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
   const phaseRef = useRef<Phase>("searching");
 
   const [armed, setArmed] = useState(false);
-  const [cameraOn, setCameraOn] = useState(false);
+  const [camera, setCamera] = useState<CameraState>("off");
   const [phase, setPhase] = useState<Phase>("searching");
   const [readouts, setReadouts] = useState<Readouts | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -77,31 +78,45 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
   const missingSinceRef = useRef<number | null>(null);
   if (plane) lastPlaneRef.current = plane;
 
+  /*
+   * The viewfinder. The camera is held only while the hunt is armed AND the
+   * page is on screen: hiding the app, locking the phone or taking a call
+   * releases the sensor immediately, which is what puts the phone's capture
+   * indicator out. Frames are only ever shown in the <video> below — they are
+   * never recorded, captured to a canvas, or sent anywhere, and audio is
+   * explicitly refused. See cameraSession.ts.
+   */
   useEffect(() => {
-    if (!armed) return;
-    let stream: MediaStream | null = null;
-    let cancelled = false;
-    navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: "environment" } })
-      .then((s) => {
-        if (cancelled) {
-          // Unmounted before the permission prompt / init resolved — stop
-          // immediately, otherwise nothing ever does: the cleanup below
-          // already ran and saw `stream === null`, so the camera (and its OS
-          // recording indicator) would otherwise stay live indefinitely.
-          s.getTracks().forEach((t) => t.stop());
-          return;
+    const session = createCameraSession({
+      getUserMedia: navigator.mediaDevices
+        ? (c) => navigator.mediaDevices.getUserMedia(c)
+        : undefined,
+      onState: (state, stream) => {
+        setCamera(state);
+        const el = videoRef.current;
+        if (!el) return;
+        try {
+          // Always clear before re-attaching, so the element never keeps the
+          // last frame — or the released track — alive.
+          if (el.srcObject) el.srcObject = null;
+          if (stream) el.srcObject = stream;
+        } catch {
+          /* attaching is best-effort; the session state is already correct */
         }
-        stream = s;
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-          setCameraOn(true);
-        }
-      })
-      .catch(() => setCameraOn(false));
+      },
+    });
+    const onVisibility = () => session.setVisible(document.visibilityState === "visible");
+    // pagehide covers iOS putting the page into the back/forward cache, where
+    // visibilitychange is not guaranteed to arrive.
+    const onPageHide = () => session.setVisible(false);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    session.setVisible(document.visibilityState === "visible");
+    session.setWanted(armed);
     return () => {
-      cancelled = true;
-      stream?.getTracks().forEach((t) => t.stop());
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      session.dispose();
     };
   }, [armed]);
 
@@ -291,6 +306,11 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
               <span className="label">03</span> Hold the lock while the ring fills
             </li>
           </ol>
+          <p className="hunt__brief-privacy">
+            The camera runs as a viewfinder only, while this screen is open. Nothing is recorded or
+            uploaded, and the microphone is never used. Your phone will show its own camera
+            indicator until you leave.
+          </p>
           <button
             className="btn btn--primary btn--block"
             onClick={() => {
@@ -323,7 +343,23 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
       onPointerCancel={() => (dragLast.current = null)}
     >
       <video ref={videoRef} className="hunt__camera" autoPlay playsInline muted />
-      {!cameraOn && <div className="hunt__nocamera" />}
+      {camera !== "live" && <div className="hunt__nocamera" />}
+
+      {/* What the camera is actually doing, stated plainly. The phone shows its
+          own capture indicator while the viewfinder is open, and without this
+          there is nothing in the app to explain what that indicator means. */}
+      <p className={camera === "live" ? "hunt__privacy hunt__privacy--live" : "hunt__privacy"}>
+        <i aria-hidden="true" />
+        {camera === "live"
+          ? "Viewfinder live · not recorded"
+          : camera === "starting"
+            ? "Starting viewfinder"
+            : camera === "off"
+              ? "Viewfinder paused"
+              : camera === "denied"
+                ? "Camera off · sweep with the arrow"
+                : "Camera unavailable · sweep with the arrow"}
+      </p>
 
       <BearingTape ref={tapeRef} />
 

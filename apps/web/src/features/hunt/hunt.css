@@ -297,3 +297,55 @@
   text-align: center;
   color: var(--ink-2);
 }
+
+/* ── Camera honesty ───────────────────────────────────────── */
+
+/*
+ * What the viewfinder is doing, said plainly. The phone lights its own capture
+ * indicator whenever the camera is open — on iOS that is the same red status
+ * pill used for screen recording — so the app has to account for it rather than
+ * leave the player guessing.
+ */
+.hunt__privacy {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-b) + var(--s-3));
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 5px var(--s-3);
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--void) 78%, transparent);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.hunt__privacy i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ink-3);
+}
+
+.hunt__privacy--live {
+  border-color: var(--phos-dim);
+  color: var(--ink);
+}
+
+.hunt__privacy--live i {
+  background: var(--phos);
+}
+
+.hunt__brief-privacy {
+  color: var(--ink-3);
+  font-size: var(--t-data-sm);
+  line-height: 1.55;
+}
