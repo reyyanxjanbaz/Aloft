@@ -79,8 +79,8 @@
   --dur: 220ms;
   --dur-slow: 420ms;
 
-  /* Chrome heights, shared by the shell and every screen that insets under it. */
-  --strip-h: 44px;
+  /* Chrome heights, shared by the shell and every screen that insets under it.
+     There is no status strip any more — link state lives in the scope's HUD. */
   --nav-h: 56px;
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);

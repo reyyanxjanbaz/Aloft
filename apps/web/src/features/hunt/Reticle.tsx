@@ -1,34 +1,27 @@
 import { forwardRef } from "react";
 
-export const RING_R = 54;
-export const RING_C = 2 * Math.PI * RING_R;
+/** Bracket geometry at rest, in the 140-unit viewBox. */
+export const BRACKET_OPEN = 1;
+/** How far in the brackets have closed when capture completes. */
+export const BRACKET_CLOSED = 0.4;
 
 /**
- * The capture reticle: corner brackets that close on lock, and a progress ring
- * that fills while aim is held. The ring is driven by stroke-dashoffset from
- * the animation loop, never from React state.
+ * The capture reticle: four corner brackets that close as aim is held.
+ *
+ * There is no progress ring. Progress *is* the brackets — they draw in from
+ * full to 40% over the hold, so the lock visibly tightens rather than a
+ * separate arc filling beside it. One device instead of two, and it moves on
+ * the same curve the audio ticks already accelerate along.
+ *
+ * The scale is driven straight from the animation loop through this ref, never
+ * from React state — the same reason the ring was driven by stroke-dashoffset.
  */
-export const Reticle = forwardRef<SVGCircleElement, { locked: boolean }>(function Reticle(
-  { locked },
-  ringRef
-) {
+export const Reticle = forwardRef<SVGGElement>(function Reticle(_props, bracketsRef) {
   return (
     <svg className="reticle" viewBox="0 0 140 140" aria-hidden="true">
-      {/* Track */}
-      <circle cx="70" cy="70" r={RING_R} className="reticle__track" />
-      {/* Progress */}
-      <circle
-        ref={ringRef}
-        cx="70"
-        cy="70"
-        r={RING_R}
-        className="reticle__progress"
-        strokeDasharray={RING_C}
-        strokeDashoffset={RING_C}
-        transform="rotate(-90 70 70)"
-      />
-      {/* Corner brackets — they pull inward when the target is locked */}
-      <g className={locked ? "reticle__brackets reticle__brackets--locked" : "reticle__brackets"}>
+      {/* Lock is shown by stroke colour (.hunt--locked); how far the capture
+          has run is the scale written here by the frame loop. */}
+      <g ref={bracketsRef} className="reticle__brackets">
         <path d="M28 44 L28 28 L44 28" />
         <path d="M96 28 L112 28 L112 44" />
         <path d="M112 96 L112 112 L96 112" />
@@ -44,3 +37,9 @@ export const Reticle = forwardRef<SVGCircleElement, { locked: boolean }>(functio
     </svg>
   );
 });
+
+/** Bracket scale for a capture progress fraction. */
+export function bracketScale(progress: number): number {
+  const clamped = Math.min(Math.max(progress, 0), 1);
+  return BRACKET_OPEN - (BRACKET_OPEN - BRACKET_CLOSED) * clamped;
+}

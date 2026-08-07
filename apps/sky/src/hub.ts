@@ -391,6 +391,8 @@ export class SkyHub {
     const aircraft = cell.lastAircraft.filter(
       (ac) => distanceM(sub.lat, sub.lon, ac.lat, ac.lon) <= sub.viewRadiusKm * 1000
     );
-    sub.send({ type: "planes", now: Date.now(), aircraft });
+    // Only the failover wrapper reports status; a bare provider simply omits
+    // it and the client shows what it can observe for itself instead.
+    sub.send({ type: "planes", now: Date.now(), aircraft, feed: this.provider.status?.() });
   }
 }

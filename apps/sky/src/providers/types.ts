@@ -1,9 +1,27 @@
 import type { AircraftState } from "@aloft/shared";
 
+/**
+ * What a provider is actually doing right now, for the client's Signal panel.
+ *
+ * The System screen used to show four hard-coded strings that never changed
+ * ("Community", "Standby"). Nothing downstream can know which upstream served
+ * a frame or how long it took, so the provider has to say.
+ */
+export interface ProviderStatus {
+  /** Name of the provider that served the most recent successful call. */
+  active: string | null;
+  /** Providers currently benched after a failure. */
+  benched: string[];
+  /** Round-trip of the most recent successful upstream call, milliseconds. */
+  lastCallMs: number | null;
+}
+
 export interface FlightProvider {
   readonly name: string;
   /** Aircraft with a known position within `radiusNm` of the point. */
   getAircraftNear(lat: number, lon: number, radiusNm: number): Promise<AircraftState[]>;
+  /** Optional live telemetry. Only the failover wrapper implements it. */
+  status?(): ProviderStatus;
   /**
    * Current state of one specific airframe, wherever it is in the world, or
    * null when it isn't being tracked right now.

@@ -10,7 +10,9 @@ import { entryFromCatch } from "../hangar/db";
 import { BearingTape, PX_PER_DEG } from "./BearingTape";
 import { CAPTURE_SECONDS, computeAimSolution, stepProgress } from "./aimMath";
 import { createCameraSession, type CameraState } from "./cameraSession";
-import { Reticle, RING_C } from "./Reticle";
+import { ElevationLadder, ladderOffsetPx } from "./ElevationLadder";
+import { bracketScale, Reticle } from "./Reticle";
+import { hasSeenBriefing, markBriefingSeen } from "./briefingSeen";
 import { useOrientation } from "./useOrientation";
 import "./hunt.css";
 
@@ -40,7 +42,10 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
   const targetRef = useRef<HTMLDivElement>(null);
   const arrowRef = useRef<HTMLDivElement>(null);
   const tapeRef = useRef<HTMLDivElement>(null);
-  const ringRef = useRef<SVGCircleElement>(null);
+  const tapeBugRef = useRef<HTMLDivElement>(null);
+  const ladderIndexRef = useRef<HTMLDivElement>(null);
+  const ladderBugRef = useRef<HTMLDivElement>(null);
+  const bracketsRef = useRef<SVGGElement>(null);
   const progressRef = useRef(0);
   const submittingRef = useRef(false);
   const alignedRef = useRef(false);
@@ -204,6 +209,32 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
         tapeRef.current.style.transform = `translate3d(${-wrapped * PX_PER_DEG}px,0,0)`;
       }
 
+      // Target bug rides *inside* the sliding scale, so it is positioned in
+      // degrees once per frame and the tape's own transform carries it.
+      //
+      // The scale lays out two full laps (0–720°), so the same bearing exists
+      // at three places on it. The bug has to go on whichever lap is nearest
+      // the heading currently under the index — otherwise a target 29° to the
+      // left is drawn 331° to the right, more than a thousand pixels off the
+      // side of the screen.
+      if (tapeBugRef.current) {
+        const wrapped = ((aimRef.current.heading % 360) + 360) % 360 + 360;
+        const base = ((az % 360) + 360) % 360;
+        let bugDeg = base;
+        for (const lap of [base, base + 360, base + 720]) {
+          if (Math.abs(lap - wrapped) < Math.abs(bugDeg - wrapped)) bugDeg = lap;
+        }
+        tapeBugRef.current.style.left = `${bugDeg * PX_PER_DEG}px`;
+      }
+
+      // Elevation ladder: fixed scale, both marks move against it.
+      if (ladderIndexRef.current) {
+        ladderIndexRef.current.style.bottom = `${ladderOffsetPx(aimRef.current.pitch)}px`;
+      }
+      if (ladderBugRef.current) {
+        ladderBugRef.current.style.bottom = `${ladderOffsetPx(el)}px`;
+      }
+
       // Target marker follows the real angular offset, clamped so the whole
       // reticle stays on screen rather than being cut off at the edge.
       const pxPerDeg = window.innerWidth / CAMERA_FOV_DEG;
@@ -239,8 +270,9 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
       }
 
       progressRef.current = stepProgress(progressRef.current, dt, aligned);
-      if (ringRef.current) {
-        ringRef.current.style.strokeDashoffset = String(RING_C * (1 - progressRef.current));
+      // Progress is the brackets closing — there is no ring any more.
+      if (bracketsRef.current) {
+        bracketsRef.current.style.transform = `scale(${bracketScale(progressRef.current)})`;
       }
 
       if (aligned) {
@@ -283,7 +315,23 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
   // Drag-to-aim fallback for devices without a compass.
   const dragLast = useRef<{ x: number; y: number } | null>(null);
 
+  // Latched at mount so marking it seen on "Begin capture" can't collapse the
+  // briefing out from under someone who is still reading it.
+  const [briefed] = useState(hasSeenBriefing);
+  // The aim solution shown on the arm screen. Computed from render state rather
+  // than the frame loop — this screen is static and doesn't run the loop yet.
+  const briefTarget = plane ?? lastPlaneRef.current;
+  const brief = briefTarget
+    ? computeAimSolution(position, { heading: 0, pitch: 0 }, briefTarget, serverNow())
+    : null;
+
   if (!armed) {
+    const begin = () => {
+      primeAudio();
+      markBriefingSeen();
+      void arm();
+      setArmed(true);
+    };
     return (
       <div className="hunt hunt--brief">
         <div className="hunt__brief-inner">
@@ -291,37 +339,65 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
           <h1 className="hunt__brief-title">
             {plane ? typeName(plane.typeIcao) : "Unidentified contact"}
           </h1>
-          <p className="hunt__brief-copy">
-            Hold your phone up and sweep the sky. The reticle locks when you are pointing at the
-            aircraft — hold it steady for {CAPTURE_SECONDS} seconds to capture.
-          </p>
-          <ol className="hunt__steps">
-            <li>
-              <span className="label">01</span> Raise the phone toward the bearing shown
-            </li>
-            <li>
-              <span className="label">02</span> Follow the arrow until the reticle appears
-            </li>
-            <li>
-              <span className="label">03</span> Hold the lock while the ring fills
-            </li>
-          </ol>
-          <p className="hunt__brief-privacy">
-            The camera runs as a viewfinder only, while this screen is open. Nothing is recorded or
-            uploaded, and the microphone is never used. Your phone will show its own camera
-            indicator until you leave.
-          </p>
-          <button
-            className="btn btn--primary btn--block"
-            onClick={() => {
-              primeAudio();
-              void arm();
-              setArmed(true);
-            }}
-          >
+
+          {/* Where to point, how high, how far — the whole briefing for anyone
+              who has done this before. */}
+          <dl className="hunt__solution">
+            <SolutionStat
+              label="Bearing"
+              value={brief ? String(Math.round(brief.az)).padStart(3, "0") : "—"}
+              unit="deg"
+            />
+            <SolutionStat
+              label="Elevation"
+              value={brief ? String(Math.round(brief.el)) : "—"}
+              unit="up"
+            />
+            <SolutionStat
+              label="Range"
+              value={brief ? (brief.groundM / 1000).toFixed(1) : "—"}
+              unit="km"
+            />
+          </dl>
+
+          {/* The long version, once. After that the aim solution above is the
+              whole screen — but this stays a screen either way, because the tap
+              below is the user gesture the camera prompt and primeAudio() both
+              need. */}
+          {!briefed && (
+            <>
+              <p className="hunt__brief-copy">
+                Hold your phone up and sweep the sky. The reticle locks when you are pointing at the
+                aircraft — hold it steady for {CAPTURE_SECONDS} seconds to capture.
+              </p>
+              <ol className="hunt__steps">
+                <li>
+                  <span className="label">01</span> Raise the phone toward the bearing shown
+                </li>
+                <li>
+                  <span className="label">02</span> Follow the arrow until the reticle appears
+                </li>
+                <li>
+                  <span className="label">03</span> Hold the lock while the brackets close
+                </li>
+              </ol>
+              <p className="hunt__brief-privacy">
+                The camera runs as a viewfinder only, while this screen is open. Nothing is recorded
+                or uploaded, and the microphone is never used. Your phone will show its own camera
+                indicator until you leave.
+              </p>
+            </>
+          )}
+
+          <button className="btn btn--primary btn--block" onClick={begin}>
             <IconHunt size={18} weight="bold" />
             Begin capture
           </button>
+          {briefed && (
+            <p className="hunt__brief-privacy">
+              Viewfinder only — nothing is recorded or uploaded.
+            </p>
+          )}
           <button className="btn btn--quiet btn--block" onClick={() => go({ name: lastTab })}>
             Back to scope
           </button>
@@ -361,7 +437,8 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
                 : "Camera unavailable · sweep with the arrow"}
       </p>
 
-      <BearingTape ref={tapeRef} />
+      <BearingTape ref={tapeRef} bugRef={tapeBugRef} />
+      <ElevationLadder ref={ladderIndexRef} bugRef={ladderBugRef} />
 
       <button
         className="hunt__exit icon-btn"
@@ -387,7 +464,7 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
           </div>
 
           <div className="hunt__target" ref={targetRef}>
-            <Reticle ref={ringRef} locked={phase === "locked"} />
+            <Reticle ref={bracketsRef} />
           </div>
 
           <div className="hunt__status">
@@ -438,6 +515,18 @@ export function HuntView({ hex, position }: { hex: string; position: PlayerPosit
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/** One readout on the arm screen's aim solution. */
+function SolutionStat({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <div className="readout">
+      <dt className="label">{label}</dt>
+      <dd className="readout__value">
+        {value} <span className="unit">{unit}</span>
+      </dd>
     </div>
   );
 }

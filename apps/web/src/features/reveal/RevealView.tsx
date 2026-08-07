@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements } from "@aloft/shared";
 import { lookupRoute, type FlightRoute } from "../../lib/adsbdb";
@@ -10,8 +10,9 @@ import { AchievementIcon } from "../../ui/AchievementIcon";
 import { IconBell, IconCheck, IconMedal, IconStar, IconWarning } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
 import { getSeenAchievements, listCatches, setSeenAchievements, type HangarEntry } from "../hangar/db";
+import { CatchCard } from "../hangar/CatchCard";
+import { useCollectionTilt } from "../hangar/useCollectionTilt";
 import { ShareCardButton } from "../share/ShareCardButton";
-import { Stage } from "./Stage";
 import "./reveal.css";
 
 const ease = [0.16, 1, 0.3, 1] as const;
@@ -31,9 +32,9 @@ export function RevealView({
   position: PlayerPosition;
 }) {
   const go = useApp((s) => s.go);
-  // Filled by the stage; lets the share card use the actual rendered model
-  // rather than a generic silhouette.
-  const snapshotRef = useRef<(() => string | null) | null>(null);
+  // One light source for the card, exactly as in the hangar — a foil that
+  // doesn't move under the phone is just a picture of a foil.
+  const tiltRef = useCollectionTilt<HTMLDivElement>();
   const [route, setRoute] = useState<FlightRoute | null>(null);
   const [unlocked, setUnlocked] = useState<string[]>([]);
   // From the real subscription, not from Notification.permission — permission
@@ -93,8 +94,22 @@ export function RevealView({
 
   return (
     <div className="reveal" style={{ ["--rarity" as string]: `var(--rarity-${entry.rarity})` }}>
-      <div className="reveal__stage">
-        <Stage typeIcao={entry.typeIcao} callsign={entry.callsign} snapshotRef={snapshotRef} />
+      {/*
+        The trophy is the card, not a model. Three.js and the whole
+        react-three stack are off the reveal entirely — the moment of reward is
+        "you got the card", and it is the same object that will sit in the
+        hangar afterwards rather than a separate rendering of the same aircraft.
+        The 3D viewer still exists, lazily, behind a card in the hangar.
+      */}
+      <div className="reveal__stage" ref={tiltRef}>
+        <motion.div
+          className="reveal__card"
+          initial={{ rotateY: 180, opacity: 0 }}
+          animate={{ rotateY: 0, opacity: 1 }}
+          transition={{ duration: 0.62, ease, delay: 0.05 }}
+        >
+          <CatchCard entry={entry} />
+        </motion.div>
         <motion.div
           className="reveal__badge"
           initial={{ opacity: 0, y: -8 }}
@@ -104,7 +119,6 @@ export function RevealView({
           <span className="reveal__rarity">{RARITY_LABEL[entry.rarity]}</span>
           {!isNew && <span className="reveal__again">Logged again</span>}
         </motion.div>
-        <span className="reveal__hint label">Drag to inspect</span>
       </div>
 
       <motion.div
@@ -213,7 +227,10 @@ export function RevealView({
         )}
 
         <div className="reveal__actions">
-          <ShareCardButton entry={entry} firstSpotter={firstSpotter} snapshotRef={snapshotRef} />
+          {/* No snapshot to offer any more — the share card falls back to the
+              family silhouette, which is the same artwork the catch card above
+              is showing, so the two finally match. */}
+          <ShareCardButton entry={entry} firstSpotter={firstSpotter} />
           <button className="btn btn--primary" onClick={() => go({ name: "hangar" })}>
             Add to hangar
           </button>

@@ -7,11 +7,12 @@ import { RevealView } from "./features/reveal/RevealView";
 import { SocialView } from "./features/social/SocialView";
 import { SystemView } from "./features/system/SystemView";
 import { flushPendingCatches } from "./lib/catchQueue";
+import { sfxConfirm } from "./lib/feedback";
 import { usePlayer } from "./state/player";
 import { useGeolocation, type PlayerPosition } from "./lib/useGeolocation";
 import { isTab, useApp } from "./state/app";
 import { connectSky, disconnectSky, setGpsPosition, setSkyIdentity, usePlanes } from "./state/planes";
-import { IconWarning, IconWorld } from "./ui/icons";
+import { checkHangar, checkPosition, checkSensors, type Check } from "./lib/selfTest";
 
 /** Jumps to the scope and opens a contact — from a notification tap. */
 function focusContact(hex: string): void {
@@ -23,7 +24,6 @@ export function App() {
   const { position, error } = useGeolocation();
   const view = useApp((s) => s.view);
   const connectedRef = useRef(false);
-  const [confirmed, setConfirmed] = useState(false);
 
   useEffect(() => {
     void usePlayer.getState().refresh().then((p) => setSkyIdentity(p?.id, p?.token));
@@ -52,7 +52,10 @@ export function App() {
     let alive = true;
     const flush = () => {
       void flushPendingCatches().then((outcomes) => {
-        if (alive && outcomes.some((o) => o.status === "caught")) setConfirmed(true);
+        // Sounded, not shown. This lands while the player is on some other
+        // screen entirely, which is exactly why it is a cue rather than a
+        // panel that would have to appear over whatever they were doing.
+        if (alive && outcomes.some((o) => o.status === "caught")) sfxConfirm();
       });
     };
     flush();
@@ -116,11 +119,6 @@ export function App() {
   return (
     <Shell tab={tab}>
       <TabView tab={tab} position={position} />
-      {confirmed && (
-        <p className="toast" role="status" onAnimationEnd={() => setConfirmed(false)}>
-          Queued catch confirmed by the tower
-        </p>
-      )}
     </Shell>
   );
 }
@@ -138,28 +136,58 @@ function TabView({ tab, position }: { tab: string; position: PlayerPosition }) {
   }
 }
 
-/** Pre-flight screen: acquiring position, or explaining why we can't. */
+/**
+ * Pre-flight: the power-on self test.
+ *
+ * Each line reports a check the app actually runs, and resolves when that check
+ * really resolves. Nothing here is theatre — the screen leaves the moment a fix
+ * lands, so the sequence takes exactly as long as acquiring a position takes and
+ * never adds a wait of its own. On a warm start the hangar and sensor lines are
+ * already filled in before the first paint.
+ */
 function Boot({ error }: { error?: string }) {
+  const [hangar, setHangar] = useState<Check | null>(null);
+  const sensors = checkSensors();
+  const gnss = checkPosition(null, error ?? null);
+
+  useEffect(() => {
+    let alive = true;
+    void checkHangar().then((c) => {
+      if (alive) setHangar(c);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const checks: Check[] = [
+    gnss,
+    hangar ?? { id: "hangar", label: "Hangar", state: "pending", value: "READING" },
+    sensors,
+  ];
+
   return (
     <div className="boot">
       <div className="boot__mark">Aloft</div>
-      {error ? (
-        <>
-          <p className="boot__line boot__line--warn">
-            <IconWarning size={16} weight="bold" />
-            {error}
-          </p>
-          <p className="boot__help">
-            Aloft needs your location to sweep the sky above you. Enable location access, or open a
-            simulated position by adding <code>?lat=51.47&amp;lon=-0.45</code> to the address — that
-            puts you on final approach at Heathrow.
-          </p>
-        </>
-      ) : (
-        <p className="boot__line">
-          <IconWorld size={16} weight="bold" />
-          Acquiring position
-          <span className="boot__dots" aria-hidden="true" />
+
+      <ul className="post" aria-live="polite">
+        {checks.map((c) => (
+          <li key={c.id} className={`post__row post__row--${c.state}`}>
+            <span className="post__label">{c.label}</span>
+            <span className="post__fill" aria-hidden="true" />
+            <span className="post__value">
+              {c.value}
+              {c.state === "pending" && <span className="boot__dots" aria-hidden="true" />}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {error && (
+        <p className="boot__help">
+          Aloft needs your location to sweep the sky above you. Enable location access, or open a
+          simulated position by adding <code>?lat=51.47&amp;lon=-0.45</code> to the address — that
+          puts you on final approach at Heathrow.
         </p>
       )}
     </div>

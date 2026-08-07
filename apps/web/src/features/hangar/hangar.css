@@ -31,11 +31,18 @@
 
 /* ── Tools row: layout toggle + badges pill ───────────── */
 
+/* Wraps rather than clipping: a third layout option pushed the row past 390px
+   and the segmented control's overflow:hidden ate the first label. */
 .hangar__tools {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.hangar__tools .segmented {
+  flex-shrink: 0;
 }
 
 .pill {
@@ -137,7 +144,8 @@
 
 .segmented__opt {
   min-height: 44px;
-  padding: 0 var(--s-4);
+  padding: 0 var(--s-3);
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--t-label);
   letter-spacing: 0.14em;
@@ -591,4 +599,88 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dist__bar i { transition: none; }
+}
+
+/* Shown while the 3D stack is fetched — it is no longer in the main bundle. */
+.viewer__loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+}
+
+/* ── Type board ───────────────────────────────────────── */
+
+/*
+ * Every type Aloft can recognise, lit when caught. The empty cells are the
+ * point — a pile of cards says what you have, a board says what you are
+ * missing. No percentage and no total on purpose: a large part of this board
+ * is permanently unreachable, so it counts what you have found and never
+ * counts down to something you cannot finish.
+ */
+.board__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-shrink: 0;
+}
+
+.board__tally {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.board__tally b {
+  color: var(--phos);
+  font-weight: 600;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+  gap: var(--s-2);
+  list-style: none;
+  flex-shrink: 0;
+}
+
+.bcell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: var(--s-1);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink-3);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.bcell__code {
+  font-size: var(--t-label);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+/* Caught: the cell takes its rarity colour and lights. */
+.bcell--on {
+  border-color: var(--rarity);
+  background: color-mix(in srgb, var(--rarity) 12%, transparent);
+  color: var(--rarity);
+  cursor: pointer;
+}
+
+.bcell--on:hover {
+  background: color-mix(in srgb, var(--rarity) 22%, transparent);
+}
+
+/* Uncaught cells keep the faintest hint of what tier they are. */
+.bcell:not(.bcell--on) {
+  border-color: color-mix(in srgb, var(--rarity) 22%, var(--rule));
 }

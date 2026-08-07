@@ -13,6 +13,65 @@
   outline: none;
 }
 
+/* ── Data blocks ──────────────────────────────────────── */
+
+/*
+ * The controller's two-line block, hung off a leader line drawn in the map
+ * itself. Positioned from the render loop with a transform per frame, never
+ * through React — twelve nodes moving at 20fps must not re-render anything.
+ *
+ * Kept as HTML rather than a MapLibre symbol layer because the basemap's glyph
+ * service has no monospaced face, and every readout in this app is mono with
+ * tabular numerals. A block set in the basemap's Open Sans would be the only
+ * proportional data in the product.
+ */
+.scope__blocks {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dblk {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding-left: var(--s-1);
+  border-left: 1px solid var(--rule-hot);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.dblk__id {
+  display: block;
+  font-size: var(--t-label);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+
+.dblk__row {
+  display: block;
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+/*
+ * Blocks stay quiet whatever the contact is doing. Over a hub almost every
+ * contact is in range, so lighting in-range blocks meant twenty-two full
+ * phosphor readouts at once — and the mark itself is already green for exactly
+ * that reason. Only the selected contact is lit here, because that is the one
+ * thing the marks cannot say twice.
+ */
+.dblk--sel .dblk__id { color: var(--magenta); }
+.dblk--sel .dblk__row { color: var(--ink-2); }
+.dblk--sel { border-left-color: var(--magenta); }
+
 /* Hide the basemap's own chrome — the scope owns its bezel. */
 .scope__map .maplibregl-ctrl-bottom-left,
 .scope__map .maplibregl-ctrl-bottom-right,
@@ -28,6 +87,7 @@
   top: var(--s-3);
   left: var(--s-3);
   right: calc(var(--s-3) + 52px);
+  z-index: 3;
   display: flex;
   flex-wrap: wrap;
   gap: var(--s-2);
@@ -43,6 +103,32 @@
   border: 1px solid var(--rule);
   border-radius: var(--r);
 }
+
+/* Power LED, moved here from the deleted status strip. */
+.scope__led {
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--phos);
+  transition: background var(--dur) var(--ease);
+}
+
+.scope__led--connecting {
+  background: var(--amber);
+  animation: led-blink 1s steps(2, end) infinite;
+}
+
+.scope__led--offline {
+  background: var(--crimson);
+}
+
+@keyframes led-blink {
+  50% { opacity: 0.25; }
+}
+
+.scope__link--live { color: var(--phos); }
+.scope__link--connecting { color: var(--amber); }
+.scope__link--offline { color: var(--crimson); }
 
 .scope__legend-rule {
   width: 1px;

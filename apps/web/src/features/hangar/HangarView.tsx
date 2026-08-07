@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ACHIEVEMENTS, evaluateAchievements, RARITY_ORDER, streakDays } from "@aloft/shared";
 import { AchievementIcon } from "../../ui/AchievementIcon";
+import { ErrorBoundary } from "../../components/ErrorBoundary";
 import { IconClose, IconStreak, IconTrophy } from "../../ui/icons";
 import { RARITY_LABEL } from "../../ui/rarity";
-import { Stage } from "../reveal/Stage";
 import { ShareCardButton } from "../share/ShareCardButton";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { CatchCard } from "./CatchCard";
@@ -12,12 +12,22 @@ import { DeckView } from "./DeckView";
 import { listCatches, type HangarEntry } from "./db";
 import { FleetStatus } from "./FleetStatus";
 import { LiveStatus } from "./LiveStatus";
+import { TypeBoard } from "./TypeBoard";
 import { useCollectionTilt } from "./useCollectionTilt";
 import { useDialog } from "./useDialog";
 import "./hangar.css";
 
+/**
+ * The 3D viewer, and with it Three.js, @react-three/fiber and drei, are pulled
+ * only when a card is actually opened. The reveal no longer renders a model at
+ * all, so this is the single entry point to that stack — keeping it out of the
+ * initial bundle takes it off the path to the scope, which is the screen the
+ * app opens on.
+ */
+const Stage = lazy(() => import("../reveal/Stage").then((m) => ({ default: m.Stage })));
+
 type Filter = "all" | "rare";
-type Mode = "gallery" | "deck";
+type Mode = "gallery" | "deck" | "board";
 
 export function HangarView({ position }: { position: PlayerPosition }) {
   const [entries, setEntries] = useState<HangarEntry[] | null>(null);
@@ -108,6 +118,13 @@ export function HangarView({ position }: { position: PlayerPosition }) {
             >
               Deck
             </button>
+            <button
+              className={mode === "board" ? "segmented__opt segmented__opt--on" : "segmented__opt"}
+              onClick={() => setMode("board")}
+              aria-pressed={mode === "board"}
+            >
+              Board
+            </button>
           </div>
           <button className="pill" onClick={() => setStatsOpen(true)}>
             <IconTrophy size={13} weight="bold" />
@@ -135,8 +152,10 @@ export function HangarView({ position }: { position: PlayerPosition }) {
         </p>
       ) : mode === "gallery" ? (
         <Gallery featured={featured!} rest={galleryRest} filter={filter} onFilter={setFilter} onOpen={setSelected} />
-      ) : (
+      ) : mode === "deck" ? (
         <DeckView entries={all} onOpen={setSelected} />
+      ) : (
+        <TypeBoard entries={all} onOpen={setSelected} />
       )}
 
       {selected && (
@@ -364,8 +383,24 @@ function Viewer({
   const ref = useDialog<HTMLDivElement>(onClose);
   return (
     <div ref={ref} className="viewer" role="dialog" aria-modal="true" aria-label={entry.typeLabel} tabIndex={-1}>
+      {/*
+        Suspense covers the chunk *arriving*; it does nothing for a chunk that
+        never arrives. A 404 — routine right after a deploy, when a cached page
+        asks for a hash that no longer exists — throws straight past it, and
+        without this boundary it would reach the app-level one and replace the
+        whole interface with the fault screen. The card and its readouts are
+        still perfectly usable without the model.
+      */}
       <div className="viewer__stage">
-        <Stage typeIcao={entry.typeIcao} callsign={entry.callsign} snapshotRef={snapshotRef} />
+        <ErrorBoundary
+          label="viewer"
+          resetKey={entry.id}
+          fallback={<p className="viewer__loading label">Model unavailable offline</p>}
+        >
+          <Suspense fallback={<p className="viewer__loading label">Building airframe</p>}>
+            <Stage typeIcao={entry.typeIcao} callsign={entry.callsign} snapshotRef={snapshotRef} />
+          </Suspense>
+        </ErrorBoundary>
       </div>
       <div className="viewer__bar">
         <div className="viewer__ident">

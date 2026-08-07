@@ -58,3 +58,26 @@ export function typeName(typeIcao: string | undefined): string {
   if (!typeIcao) return "Mystery aircraft";
   return TYPE_NAMES[typeIcao.toUpperCase()] ?? typeIcao.toUpperCase();
 }
+
+/**
+ * Every ICAO type the app knows by name or by rarity — its actual catalogue,
+ * and the board the Hangar draws.
+ *
+ * Sorted rarest first so the board reads as a ladder rather than an alphabet.
+ * Note this is a list of what Aloft can *recognise*, not of what anyone can
+ * realistically catch: an An-225 no longer exists and a VC-25 will not fly over
+ * most people. The board is deliberately not framed as completable.
+ */
+export const KNOWN_TYPES: string[] = (() => {
+  const all = new Set<string>([
+    ...Object.keys(TYPE_NAMES),
+    ...LEGENDARY,
+    ...EPIC,
+    ...RARE,
+    ...UNCOMMON,
+  ]);
+  return [...all].sort((a, b) => {
+    const byRarity = RARITY_ORDER.indexOf(rarityFor(b)) - RARITY_ORDER.indexOf(rarityFor(a));
+    return byRarity !== 0 ? byRarity : a.localeCompare(b);
+  });
+})();

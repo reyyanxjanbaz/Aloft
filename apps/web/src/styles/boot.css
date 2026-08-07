@@ -18,6 +18,12 @@
   color: var(--ink);
 }
 
+/*
+ * A single status line. The self-test below replaced this on the boot screen,
+ * but main.tsx's last-resort crash fallback still uses it — and that is the one
+ * screen that must never render unstyled, because it is what shows when
+ * everything else has already failed.
+ */
 .boot__line {
   display: flex;
   align-items: center;
@@ -31,9 +37,53 @@
 
 .boot__line--warn {
   color: var(--crimson);
-  text-transform: none;
-  letter-spacing: 0.02em;
 }
+
+/* ── Power-on self test ───────────────────────────────── */
+
+/*
+ * One row per real check, leader-dotted between the rubric and its readout the
+ * way a test card is printed. Rows resolve in whatever order their checks
+ * actually finish — the hangar read is usually instant, the fix is the wait.
+ */
+.post {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  width: 100%;
+  max-width: 300px;
+  list-style: none;
+}
+
+.post__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-data-sm);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.post__label {
+  color: var(--ink-2);
+}
+
+/* The dotted leader. Fills whatever space the two ends leave. */
+.post__fill {
+  flex: 1;
+  height: 0;
+  border-bottom: 1px dotted var(--rule-hot);
+  transform: translateY(-3px);
+}
+
+.post__value {
+  white-space: nowrap;
+}
+
+.post__row--pending .post__value { color: var(--ink-3); }
+.post__row--pass .post__value { color: var(--phos); }
+.post__row--fail .post__value { color: var(--amber); }
 
 /* Three dots that fill in sequence — a device booting, not a spinner. */
 .boot__dots::after {

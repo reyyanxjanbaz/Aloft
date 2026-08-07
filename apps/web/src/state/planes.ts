@@ -4,6 +4,7 @@ import {
   MIN_VIEW_RADIUS_KM,
   normalizeBaseUrl,
   type AircraftState,
+  type FeedStatus,
   type ServerMessage,
 } from "@aloft/shared";
 
@@ -16,6 +17,8 @@ interface PlanesState {
   selectedHex: string | null;
   /** Timestamp of the last frame received, for the scope's freshness readout. */
   lastFrameAt: number | null;
+  /** What the tower says its upstream feeds are doing. Null until a frame. */
+  feed: FeedStatus | null;
   select: (hex: string | null) => void;
 }
 
@@ -24,6 +27,7 @@ export const usePlanes = create<PlanesState>((set) => ({
   planes: new Map(),
   selectedHex: null,
   lastFrameAt: null,
+  feed: null,
   select: (hex) => set({ selectedHex: hex }),
 }));
 
@@ -209,7 +213,14 @@ function open(): void {
 
       const planes = new Map<string, AircraftState>();
       for (const ac of msg.aircraft) planes.set(ac.hex, ac);
-      usePlanes.setState({ planes, link: "live", lastFrameAt: Date.now() });
+      usePlanes.setState({
+        planes,
+        link: "live",
+        lastFrameAt: Date.now(),
+        // An older tower omits this; keep whatever we last knew rather than
+        // blanking the Signal panel on every frame.
+        feed: msg.feed ?? usePlanes.getState().feed,
+      });
     }
   };
 
@@ -237,5 +248,5 @@ export function disconnectSky(): void {
   }
   ws?.close();
   mapView = null;
-  usePlanes.setState({ link: "offline", planes: new Map() });
+  usePlanes.setState({ link: "offline", planes: new Map(), feed: null });
 }

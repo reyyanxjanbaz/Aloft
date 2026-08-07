@@ -38,9 +38,42 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          maplibre: ["maplibre-gl"],
-          three: ["three", "@react-three/fiber", "@react-three/drei"]
+        /*
+         * Split by module id, not by entry point.
+         *
+         * The array form (`three: ["three", "@react-three/fiber", ...]`) pulled
+         * React into the three chunk as well, because react-three depends on
+         * it — so the entry imported React *from* the 1.2 MB three chunk and
+         * every visitor downloaded the whole 3D stack to reach the scope. The
+         * viewer being lazy could not help while React lived inside it.
+         *
+         * Matching on the path keeps three and its react bindings together and
+         * leaves React itself where the rest of the app can reach it.
+         */
+        manualChunks(id: string) {
+          // Pinned first, and deliberately. React and zustand are shared
+          // between the app and @react-three/fiber, so left to itself Rollup
+          // hoists them into whichever vendor chunk it likes — which put React
+          // inside the 1.2 MB three chunk and dragged the whole 3D stack onto
+          // the critical path no matter how lazily the viewer was imported.
+          if (
+            id.includes("node_modules/react/") ||
+            id.includes("node_modules/react-dom/") ||
+            id.includes("node_modules/scheduler/") ||
+            id.includes("node_modules/zustand/") ||
+            // Vite's own dynamic-import helper. Left unpinned it lands in
+            // whichever chunk happens to claim it first — which was the three
+            // chunk, so the entry statically imported 972 KB of 3D engine to
+            // reach one twenty-line function.
+            id.includes("vite/preload-helper")
+          ) {
+            return "vendor";
+          }
+          if (id.includes("node_modules/maplibre-gl/")) return "maplibre";
+          if (id.includes("node_modules/three/") || id.includes("node_modules/@react-three/")) {
+            return "three";
+          }
+          return undefined;
         }
       }
     }

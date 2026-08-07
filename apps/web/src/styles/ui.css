@@ -215,12 +215,16 @@
   line-height: 1.6;
 }
 
-/* ── Toast ────────────────────────────────────────────── */
+/* ── Update offer ─────────────────────────────────────── */
 
 /*
- * Transient confirmation, above the destination row. Self-dismisses via
- * animationend so nothing has to hold a timer, and stays out of the way of
- * the scope — it sits over the chrome, never the map centre.
+ * Transient *messages* are gone — a confirmation now arrives as a sound cue
+ * (lib/feedback) rather than a bar that appears over whatever the player is
+ * doing, often on a screen unrelated to what it is confirming.
+ *
+ * This is the one survivor, and it is not a message: it is a control. A sound
+ * cannot carry a Reload button, and an offer to take an update must not expire
+ * on its own, so it stays on screen until it is acted on.
  */
 .toast {
   position: fixed;
@@ -229,9 +233,9 @@
   z-index: 40;
   display: flex;
   align-items: center;
-  gap: var(--s-2);
+  gap: var(--s-4);
   max-width: min(92vw, 420px);
-  padding: var(--s-2) var(--s-4);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
   background: var(--deck-2);
   border: 1px solid var(--phos);
   border-radius: var(--r-sm);
@@ -240,30 +244,6 @@
   font-size: var(--t-data-sm);
   letter-spacing: 0.02em;
   transform: translateX(-50%);
-  animation: toast-life 4.2s var(--ease) forwards;
-}
-
-@keyframes toast-life {
-  0% { opacity: 0; transform: translate(-50%, 8px); }
-  8%, 88% { opacity: 1; transform: translate(-50%, 0); }
-  100% { opacity: 0; transform: translate(-50%, 4px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .toast {
-    /* Still self-dismisses — animationend must fire for the toast to clear. */
-    animation: toast-life-still 4.2s steps(1, end) forwards;
-  }
-  @keyframes toast-life-still {
-    0%, 92% { opacity: 1; }
-    100% { opacity: 0; }
-  }
-}
-
-/* Toast with an action — same surface, room for a control. */
-.toast--action {
-  gap: var(--s-4);
-  padding-right: var(--s-2);
 }
 
 .toast__action {
@@ -288,16 +268,6 @@
 
 .toast__action:disabled {
   opacity: 0.5;
-}
-
-/* An offer to reload must not expire on its own. */
-.toast--action {
-  animation: toast-in var(--dur) var(--ease) forwards;
-}
-
-@keyframes toast-in {
-  from { opacity: 0; transform: translate(-50%, 8px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* A warning that carries a recovery action, not just a statement. */

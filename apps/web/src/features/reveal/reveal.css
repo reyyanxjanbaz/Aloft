@@ -11,14 +11,43 @@
   background: var(--void);
 }
 
+/*
+ * The card sits where the model used to. It flips in on rotateY, which needs
+ * a perspective on the stage itself — the card's own perspective governs the
+ * foil tilt inside it, not this.
+ */
 .reveal__stage {
   position: relative;
   min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--s-4);
+  perspective: 1200px;
   border-bottom: 1px solid var(--rule);
 }
 
-.reveal__stage canvas {
-  display: block;
+/*
+ * Sized from the stage's height, not the viewport's width. A width-driven card
+ * has no idea how much room the row above the dossier actually has: at 375×667
+ * the stage is 240px and a 168px-wide card is 233px tall, so it spilled over
+ * the hairline and onto the dossier. Deriving the width from the height instead
+ * means it can never overflow, and it fills the stage properly on a tall phone
+ * rather than floating in the middle of it.
+ */
+.reveal__card {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 0.72;
+  transform-style: preserve-3d;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Framer honours the OS preference at the root; this covers the case where
+     the card is still mounted mid-flip when the setting changes. */
+  .reveal__card {
+    transform: none !important;
+  }
 }
 
 .reveal__badge {
@@ -49,13 +78,6 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-3);
-}
-
-.reveal__hint {
-  position: absolute;
-  right: var(--s-3);
-  bottom: var(--s-3);
-  pointer-events: none;
 }
 
 /* ── Dossier ──────────────────────────────────────────── */

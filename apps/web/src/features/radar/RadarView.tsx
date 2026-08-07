@@ -9,6 +9,12 @@ import { InboundBoard } from "./InboundBoard";
 import { RadarMap } from "./RadarMap";
 import "./radar.css";
 
+const LINK_COPY = {
+  live: "Live",
+  connecting: "Syncing",
+  offline: "Link lost",
+} as const;
+
 export function RadarView({ position }: { position: PlayerPosition }) {
   const link = usePlanes((s) => s.link);
   const planes = usePlanes((s) => s.planes);
@@ -27,8 +33,13 @@ export function RadarView({ position }: { position: PlayerPosition }) {
     <div className="scope">
       <RadarMap position={position} recenterSignal={recenter} />
 
+      {/* The status strip used to carry link state on every screen. It now
+          lives here, beside the contacts it actually describes. */}
       <div className="scope__hud">
         <div className="scope__legend">
+          <span className={`scope__led scope__led--${link}`} aria-hidden="true" />
+          <span className={`label scope__link scope__link--${link}`}>{LINK_COPY[link]}</span>
+          <span className="scope__legend-rule" aria-hidden="true" />
           <span className="label">Ring</span>
           <span className="data data--sm">{CAPTURE_RADIUS_KM} km</span>
           <span className="scope__legend-rule" aria-hidden="true" />

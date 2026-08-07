@@ -5,10 +5,6 @@
  * is ever an emoji.
  */
 export {
-  Broadcast as IconScope,
-  Garage as IconHangar,
-  UsersThree as IconSpotters,
-  Sliders as IconSystem,
   Crosshair as IconHunt,
   CrosshairSimple as IconReticle,
   AirplaneTilt as IconAircraft,

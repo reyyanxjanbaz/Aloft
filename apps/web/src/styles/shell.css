@@ -5,80 +5,15 @@
   background: var(--void);
 }
 
-/* ── Status strip ─────────────────────────────────────── */
-
-.strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-  height: calc(var(--strip-h) + var(--safe-t));
-  padding: var(--safe-t) var(--s-4) 0;
-  background: var(--void);
-  border-bottom: 1px solid var(--rule);
-  flex-shrink: 0;
-}
-
-.strip__mark {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  font-size: var(--t-h2);
-  font-weight: 700;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--ink);
-}
-
-/* Power LED — the only always-on colour in the chrome. */
-.strip__led {
-  width: 6px;
-  height: 6px;
-  border-radius: 1px;
-  background: var(--phos);
-  transition: background var(--dur) var(--ease);
-}
-
-.strip__led--connecting {
-  background: var(--amber);
-  animation: led-blink 1s steps(2, end) infinite;
-}
-
-.strip__led--offline {
-  background: var(--crimson);
-}
-
-@keyframes led-blink {
-  50% { opacity: 0.25; }
-}
-
-.strip__status {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  font-family: var(--font-mono);
-  font-size: var(--t-label);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  font-variant-numeric: tabular-nums;
-}
-
-.strip__link--live { color: var(--phos); }
-.strip__link--connecting { color: var(--amber); }
-.strip__link--offline { color: var(--crimson); }
-
-.strip__sep {
-  width: 1px;
-  height: 10px;
-  background: var(--rule-hot);
-}
-
-.strip__count {
-  color: var(--ink-2);
-}
-
 /* ── Body ─────────────────────────────────────────────── */
 
+/*
+ * The status strip is gone. It occupied 44px on every screen to carry one
+ * number — a contact count the scope was already showing directly below it —
+ * and link state, which now lives in the scope's own HUD legend where the
+ * contacts it describes actually are. Screens inset under the top safe area
+ * themselves; there is no chrome up there any more to do it for them.
+ */
 .shell__body {
   position: relative;
   flex: 1;
@@ -87,11 +22,17 @@
 
 .shell__view {
   position: absolute;
-  inset: 0;
+  inset: var(--safe-t) 0 0;
 }
 
-/* ── Destination row ──────────────────────────────────── */
+/* ── Destination row: line-select keys ────────────────── */
 
+/*
+ * The MFD softkey row. No icons — the interface is otherwise entirely type,
+ * and a garage door standing in for "hangar" was always a stretch. The active
+ * key inverts to solid phosphor rather than carrying a separate marker, which
+ * is how a real bezel shows the page you are on.
+ */
 .nav {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -102,39 +43,41 @@
   flex-shrink: 0;
 }
 
-.nav__item {
-  position: relative;
+.lsk-nav {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  color: var(--ink-3);
-  transition: color var(--dur-fast) var(--ease);
-}
-
-.nav__item:hover {
-  color: var(--ink-2);
-}
-
-.nav__item--on {
-  color: var(--phos);
-}
-
-.nav__label {
   font-family: var(--font-mono);
   font-size: var(--t-label);
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: 0.14em;
-  text-transform: uppercase;
+  color: var(--ink-2);
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
 
-/* Active destination is marked by a hairline bar, like a selected MFD page. */
-.nav__marker {
-  position: absolute;
-  top: -1px;
-  left: 22%;
-  right: 22%;
-  height: 2px;
+.lsk-nav + .lsk-nav {
+  border-left: 1px solid var(--rule);
+}
+
+.lsk-nav:hover {
+  color: var(--ink);
+}
+
+/* The brackets are the key's own frame; they dim so the label reads first. */
+.lsk-nav__br {
+  font-style: normal;
+  padding: 0 3px;
+  color: var(--ink-3);
+}
+
+.lsk-nav--on {
   background: var(--phos);
+  color: var(--void);
+  font-weight: 700;
+}
+
+.lsk-nav--on .lsk-nav__br {
+  color: var(--phos-deep);
 }

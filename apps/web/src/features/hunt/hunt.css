@@ -73,6 +73,36 @@
   color: var(--phos-dim);
 }
 
+/*
+ * The aim solution: where to point, how high, how far. Shown on every arm
+ * screen — for a briefed player it *is* the arm screen.
+ */
+.hunt__solution {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-3);
+  padding: var(--s-4) 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.hunt__solution .readout {
+  align-items: center;
+  text-align: center;
+}
+
+.hunt__solution .readout__value {
+  font-size: var(--t-data-xl);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--phos);
+}
+
+.hunt__solution .unit {
+  display: block;
+  margin-top: var(--s-1);
+}
+
 /* ── Heading tape ─────────────────────────────────────── */
 
 .tape {
@@ -130,6 +160,89 @@
   background: var(--phos);
 }
 
+/*
+ * The target bug. Rides inside the sliding scale, positioned in degrees, so
+ * the tape's own transform carries it — aiming is "drive the bug to the index".
+ * Amber is spent here deliberately: it is the only amber on the hunt screen
+ * once the readout bar collapses, so it cannot be confused with a caution.
+ */
+.tape__bug {
+  position: absolute;
+  top: 0;
+  width: 14px;
+  margin-left: -7px;
+  color: var(--amber);
+  will-change: left;
+}
+
+/* ── Elevation ladder ─────────────────────────────────── */
+
+/*
+ * The other half of the aim. Bearing was the only instrumented axis, and
+ * elevation is the one players get wrong — pointing at the right heading but
+ * at the horizon while the contact is 40° up.
+ */
+.ladder {
+  position: absolute;
+  top: 50%;
+  right: var(--s-3);
+  width: 34px;
+  height: 216px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.ladder__scale {
+  position: absolute;
+  inset: 0;
+  border-left: 1px solid var(--rule);
+}
+
+.ladder__tick {
+  position: absolute;
+  left: 0;
+  width: 5px;
+  height: 1px;
+  background: var(--ink-3);
+}
+
+.ladder__tick--major {
+  width: 9px;
+  background: var(--phos-dim);
+}
+
+.ladder__label {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+
+/* Where the phone is pointed. */
+.ladder__index {
+  position: absolute;
+  left: -1px;
+  width: 16px;
+  height: 2px;
+  margin-bottom: -1px;
+  background: var(--phos);
+  will-change: bottom;
+}
+
+/* Where the contact is. */
+.ladder__bug {
+  position: absolute;
+  left: -5px;
+  height: 14px;
+  margin-bottom: -7px;
+  color: var(--amber);
+  will-change: bottom;
+}
+
 /* ── Reticle ──────────────────────────────────────────── */
 
 .hunt__target {
@@ -149,20 +262,6 @@
   overflow: visible;
 }
 
-.reticle__track {
-  fill: none;
-  stroke: rgba(220, 237, 230, 0.18);
-  stroke-width: 2;
-}
-
-.reticle__progress {
-  fill: none;
-  stroke: var(--phos);
-  stroke-width: 3;
-  stroke-linecap: butt;
-  will-change: stroke-dashoffset;
-}
-
 .reticle__brackets path,
 .reticle__pip path {
   fill: none;
@@ -170,13 +269,19 @@
   stroke-width: 2;
 }
 
+/*
+ * The brackets are the progress indicator. Their scale is written from the
+ * animation loop every frame, so there is deliberately no transition on
+ * transform here — a transition would fight the loop and lag the lock. The
+ * colour change on lock is the only thing that eases.
+ */
 .reticle__brackets {
-  transition: transform var(--dur) var(--ease-out);
   transform-origin: 70px 70px;
+  will-change: transform;
 }
 
-.reticle__brackets--locked {
-  transform: scale(0.86);
+.reticle__brackets path {
+  transition: stroke var(--dur-fast) var(--ease);
 }
 
 .hunt--locked .reticle__brackets path,
@@ -216,7 +321,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(var(--safe-b) + 96px);
+  bottom: calc(var(--safe-b) + 106px);
   text-align: center;
   pointer-events: none;
 }
@@ -265,7 +370,6 @@
   position: absolute;
   left: var(--s-4);
   right: var(--s-4);
-  bottom: calc(var(--safe-b) + 130px);
   text-align: center;
   font-family: var(--font-mono);
   font-size: var(--t-data-sm);
@@ -273,10 +377,17 @@
 }
 
 .hunt__note {
+  bottom: calc(var(--safe-b) + 138px);
   color: var(--amber);
 }
 
+/*
+ * Stacked above the note rather than sharing its position: "no compass" and a
+ * rejected capture are both live at once on a device aiming by drag, and they
+ * used to print straight on top of each other.
+ */
 .hunt__failure {
+  bottom: calc(var(--safe-b) + 168px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -306,10 +417,12 @@
  * pill used for screen recording — so the app has to account for it rather than
  * leave the player guessing.
  */
+/* Sits clear of the readout bar below it — the two used to share a `bottom`
+   and the pill landed straight on top of the range and bearing values. */
 .hunt__privacy {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-b) + var(--s-3));
+  bottom: calc(var(--safe-b) + 76px);
   z-index: 6;
   display: flex;
   align-items: center;

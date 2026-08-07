@@ -1,13 +1,40 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
-import { CAPTURE_RADIUS_KM, destinationPoint, distanceM } from "@aloft/shared";
+import { CAPTURE_RADIUS_KM, deadReckon, destinationPoint, distanceM } from "@aloft/shared";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { projectedPosition } from "../../lib/project";
 import { releaseMapView, serverNow, setMapView, usePlanes } from "../../state/planes";
 import { applyScopeTheme } from "./scopeTheme";
+import {
+  selectBlocks,
+  selectPredicted,
+  selectTrailed,
+  PREDICT_SEC,
+  type BlockDatum,
+} from "./dataBlocks";
+import { clearTracks, recordTracks, trailFor } from "./trackHistory";
 
 const STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
+
+/**
+ * Screen distance from a mark to its data block. Held constant in pixels by
+ * converting to ground distance at the current zoom every frame — a fixed
+ * offset in degrees would grow to hundreds of kilometres when zoomed out.
+ */
+const LEADER_PX = 26;
+/** Bearing the leader runs along: up and to the right, as on a real scope. */
+const LEADER_BEARING = 55;
+/** Footprint a data block needs to stay readable, in screen pixels. */
+const BLOCK_W = 62;
+const BLOCK_H = 26;
+
+/** Ground metres per screen pixel at this zoom and latitude. */
+function metresPerPixel(lat: number, zoom: number): number {
+  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** zoom;
+}
+
+const TREND_MARK = { up: "↑", down: "↓", level: "·" } as const;
 
 /** Plan-view aircraft silhouette, nose up. Drawn as an SDF so it can be tinted. */
 const AIRCRAFT_PATH =
@@ -74,6 +101,7 @@ export function RadarMap({
   recenterSignal: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const blocksRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const readyRef = useRef(false);
   const posRef = useRef(position);
@@ -147,6 +175,68 @@ export function RadarMap({
             type: "line",
             source: "sweep",
             paint: { "line-color": "#00e08a", "line-width": 1, "line-opacity": 0.5 },
+          });
+
+          // Trail: where the contact has actually been, decaying backwards.
+          // Added before the aircraft layer so marks always draw on top.
+          map.addSource("trail", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+          });
+          map.addLayer({
+            id: "trail",
+            type: "circle",
+            source: "trail",
+            paint: {
+              "circle-radius": ["get", "r"],
+              "circle-color": ["get", "tint"],
+              "circle-opacity": ["get", "fade"],
+            },
+          });
+
+          // Prediction: where it will be in a minute, if it holds this track.
+          // Dashed because it is an extrapolation, not an observation.
+          map.addSource("predict", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+          });
+          map.addLayer({
+            id: "predict",
+            type: "line",
+            source: "predict",
+            filter: ["==", ["geometry-type"], "LineString"],
+            paint: {
+              "line-color": ["get", "tint"],
+              "line-width": 1,
+              "line-opacity": 0.55,
+              "line-dasharray": [2, 3],
+            },
+          });
+          map.addLayer({
+            id: "predict-end",
+            type: "circle",
+            source: "predict",
+            filter: ["==", ["geometry-type"], "Point"],
+            paint: {
+              "circle-radius": 2.5,
+              "circle-color": "rgba(0,0,0,0)",
+              "circle-stroke-color": ["get", "tint"],
+              "circle-stroke-width": 1,
+              "circle-opacity": 0.55,
+            },
+          });
+
+          // Leader lines for the data blocks. The block's HTML sits at the far
+          // end of these, so the two stay glued while the scope is panned.
+          map.addSource("leader", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+          });
+          map.addLayer({
+            id: "leader",
+            type: "line",
+            source: "leader",
+            paint: { "line-color": "#2b433a", "line-width": 1 },
           });
 
           map.addSource("player", {
@@ -251,6 +341,9 @@ export function RadarMap({
       // Hand view ownership back so the feed follows the device again while
       // the player is on another tab.
       releaseMapView();
+      // Trails are only meaningful for a live session; keeping them across a
+      // tab switch would draw a jump from wherever the contact was minutes ago.
+      clearTracks();
       map.remove();
       mapRef.current = null;
     };
@@ -328,10 +421,21 @@ export function RadarMap({
         });
       }
 
+      // Record before drawing, so a contact's first frame already has a fix in
+      // hand and the trail starts one sample behind rather than two.
+      recordTracks(planes.values());
+
+      const tNow = serverNow();
+      const trailFeatures: GeoJSON.Feature[] = [];
+      const tints = new Map<string, string>();
+
       for (const ac of planes.values()) {
-        const { lat, lon } = projectedPosition(ac, serverNow());
+        const { lat, lon } = projectedPosition(ac, tNow);
         const inRange = distanceM(me.lat, me.lon, lat, lon) <= CAPTURE_RADIUS_KM * 1000;
         const selected = ac.hex === selectedHex;
+        // Magenta marks the active target, green marks a capturable contact.
+        const tint = selected ? "#ff5ce1" : inRange ? "#00e08a" : "#5c7d70";
+        tints.set(ac.hex, tint);
         features.push({
           type: "Feature",
           geometry: { type: "Point", coordinates: [lon, lat] },
@@ -342,17 +446,179 @@ export function RadarMap({
             track: ac.track ?? 0,
             inRange,
             selected,
-            // Magenta marks the active target, green marks a capturable contact.
-            tint: selected ? "#ff5ce1" : inRange ? "#00e08a" : "#5c7d70",
+            tint,
           },
         });
       }
+
+      // Trails only for the nearest handful. Building them for the whole feed
+      // meant thousands of throwaway features per frame on a busy cell, for
+      // marks too small and too far away to read a trail on.
+      for (const ac of selectTrailed(planes.values(), me, selectedHex, tNow)) {
+        const tint = tints.get(ac.hex) ?? "#5c7d70";
+        // Oldest fix faintest and smallest, so the trail reads as decay rather
+        // than as a dotted line of equal marks.
+        const past = trailFor(ac.hex);
+        past.forEach((p, i) => {
+          const age = (i + 1) / (past.length + 1);
+          trailFeatures.push({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+            properties: { tint, r: 1 + age * 1.4, fade: 0.12 + age * 0.4 },
+          });
+        });
+      }
       source.setData({ type: "FeatureCollection", features });
+      (map.getSource("trail") as maplibregl.GeoJSONSource | undefined)?.setData({
+        type: "FeatureCollection",
+        features: trailFeatures,
+      });
+
+      // Prediction vectors, only for what is actually coming to us.
+      const predictFeatures: GeoJSON.Feature[] = [];
+      for (const ac of selectPredicted(planes.values(), me, selectedHex, tNow)) {
+        const p = projectedPosition(ac, tNow);
+        const [endLat, endLon] = deadReckon(p.lat, p.lon, ac.track, ac.gsKt, PREDICT_SEC);
+        const tint = tints.get(ac.hex) ?? "#5c7d70";
+        predictFeatures.push({
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [p.lon, p.lat],
+              [endLon, endLat],
+            ],
+          },
+          properties: { tint },
+        });
+        predictFeatures.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [endLon, endLat] },
+          properties: { tint },
+        });
+      }
+      (map.getSource("predict") as maplibregl.GeoJSONSource | undefined)?.setData({
+        type: "FeatureCollection",
+        features: predictFeatures,
+      });
+
+      // Data blocks: leader lines are geographic, the text is HTML positioned
+      // at the far end of each leader. The block has to be HTML — the basemap's
+      // glyph service has no monospaced face, and every readout in this app is
+      // mono with tabular numerals.
+      const zoom = map.getZoom();
+      const blocks = selectBlocks(planes.values(), me, selectedHex, zoom, tNow);
+      const offsetM = LEADER_PX * metresPerPixel(me.lat, zoom);
+      const leaderFeatures: GeoJSON.Feature[] = [];
+      const anchors: Array<{ datum: BlockDatum; x: number; y: number }> = [];
+
+      /*
+       * Screen-space decluttering. The cap and the priority sort decide which
+       * contacts *deserve* a block; this decides which of them can actually be
+       * read. Over a hub the marks are metres apart on screen and the blocks
+       * pile into an illegible stack — the option that introduced them said so.
+       *
+       * Greedy, in priority order, so the result is stable between frames:
+       * a block is placed only if it clears every block already placed. Losing
+       * a lower-priority block is the correct outcome — it was going to be
+       * unreadable anyway, and its mark is still on the scope.
+       */
+      const canvas = map.getCanvas();
+      const viewW = canvas.clientWidth;
+      const viewH = canvas.clientHeight;
+
+      for (const datum of blocks) {
+        const [aLat, aLon] = destinationPoint(datum.lat, datum.lon, LEADER_BEARING, offsetM);
+        const pt = map.project([aLon, aLat]);
+
+        // A block that runs off the edge is a truncated callsign, which is
+        // worse than no callsign — the overlay clips rather than wrapping.
+        if (pt.x < 0 || pt.y < 0 || pt.x + BLOCK_W > viewW || pt.y + BLOCK_H > viewH) continue;
+
+        const collides = anchors.some(
+          (a) => Math.abs(a.x - pt.x) < BLOCK_W && Math.abs(a.y - pt.y) < BLOCK_H
+        );
+        // The selected contact always gets its block, whatever it overlaps —
+        // hiding the readout for the one thing the player just tapped would be
+        // the decluttering working against them.
+        if (collides && !datum.selected) continue;
+
+        anchors.push({ datum, x: pt.x, y: pt.y });
+        leaderFeatures.push({
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [datum.lon, datum.lat],
+              [aLon, aLat],
+            ],
+          },
+          properties: {},
+        });
+      }
+      (map.getSource("leader") as maplibregl.GeoJSONSource | undefined)?.setData({
+        type: "FeatureCollection",
+        features: leaderFeatures,
+      });
+      paintBlocks(blocksRef.current, anchors);
     };
 
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  return <div ref={containerRef} className="scope__map" />;
+  return (
+    <div className="scope__map" ref={containerRef}>
+      <div className="scope__blocks" ref={blocksRef} aria-hidden="true" />
+    </div>
+  );
+}
+
+/**
+ * Writes the data blocks into the overlay, reusing elements between frames.
+ *
+ * Rebuilding twelve nodes twenty times a second would churn the DOM for no
+ * reason, so the pool only grows and surplus elements are hidden rather than
+ * removed. Text is only assigned when it has actually changed — at 20fps the
+ * ident and level are identical on almost every frame, and only the transform
+ * really moves.
+ */
+function paintBlocks(
+  host: HTMLDivElement | null,
+  anchors: Array<{ datum: BlockDatum; x: number; y: number }>
+): void {
+  if (!host) return;
+
+  while (host.childElementCount < anchors.length) {
+    const el = document.createElement("div");
+    el.className = "dblk";
+    el.innerHTML = '<b class="dblk__id"></b><span class="dblk__row"></span>';
+    host.appendChild(el);
+  }
+
+  const children = host.children;
+  for (let i = 0; i < children.length; i++) {
+    const el = children[i] as HTMLDivElement;
+    const anchor = anchors[i];
+    if (!anchor) {
+      el.style.display = "none";
+      continue;
+    }
+    const { datum, x, y } = anchor;
+    el.style.display = "";
+    el.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
+    // Only the selection is styled — the mark's own colour already says
+    // whether a contact is in range, and lighting the block too meant every
+    // readout over a hub was full phosphor at once.
+    const state = datum.selected ? "sel" : "";
+    if (el.dataset.state !== state) {
+      el.dataset.state = state;
+      el.className = state ? `dblk dblk--${state}` : "dblk";
+    }
+    const ident = el.firstElementChild as HTMLElement;
+    if (ident.textContent !== datum.ident) ident.textContent = datum.ident;
+    const row = el.lastElementChild as HTMLElement;
+    const text = `${datum.level} ${TREND_MARK[datum.trend]} ${datum.gs}`;
+    if (row.textContent !== text) row.textContent = text;
+  }
 }

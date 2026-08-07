@@ -11,7 +11,7 @@ export function UpdateToast() {
   if (!ready) return null;
 
   return (
-    <div className="toast toast--action" role="status">
+    <div className="toast" role="status">
       <span>New build ready</span>
       <button className="toast__action" onClick={reloadForUpdate}>
         <IconRefresh size={14} weight="bold" />

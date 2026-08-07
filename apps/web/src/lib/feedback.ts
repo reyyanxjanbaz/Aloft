@@ -6,17 +6,60 @@ import { RARITY_ORDER, type Rarity } from "@aloft/shared";
  */
 
 const MUTE_KEY = "aloft-muted";
+const HAPTIC_KEY = "aloft-haptics-off";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 
+/*
+ * Every storage touch here is guarded, because these are read from inside the
+ * capture loop.
+ *
+ * `localStorage` does not merely return null when a browser blocks it — it
+ * throws on access. `vibrate()` runs on the frame loop *before* the
+ * `progress >= 1` submit check, so an unguarded read there meant a player
+ * holding a perfect lock on such a browser would fill the reticle and never
+ * complete the catch, with nothing on screen to explain it.
+ */
+function readFlag(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeFlag(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* private mode — the preference just won't survive a reload */
+  }
+}
+
 export function isMuted(): boolean {
-  return localStorage.getItem(MUTE_KEY) === "1";
+  return readFlag(MUTE_KEY) === "1";
 }
 
 export function setMuted(muted: boolean): void {
-  localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
+  writeFlag(MUTE_KEY, muted ? "1" : "0");
   if (master) master.gain.value = muted ? 0 : 0.9;
+}
+
+/**
+ * Haptics are a separate switch from sound.
+ *
+ * They used to be gated by `isMuted()`, which was survivable while every
+ * notification also had a visible toast. Now that transients are carried by
+ * sound, one "mute" would have silenced the entire notification channel —
+ * so muting for a meeting no longer costs the player everything.
+ */
+export function hapticsEnabled(): boolean {
+  return readFlag(HAPTIC_KEY) !== "1";
+}
+
+export function setHaptics(on: boolean): void {
+  writeFlag(HAPTIC_KEY, on ? "0" : "1");
 }
 
 /** Must be called from a user gesture (browsers block audio otherwise). */
@@ -84,7 +127,34 @@ function noiseBurst(duration: number, gain = 0.2): void {
 }
 
 export function vibrate(pattern: number | number[]): void {
-  if (!isMuted() && "vibrate" in navigator) navigator.vibrate(pattern);
+  if (hapticsEnabled() && "vibrate" in navigator) navigator.vibrate(pattern);
+}
+
+/*
+ * Transient cues. These replace the toast: a confirmation, a caution and an
+ * alert, each with its own shape so they are told apart without looking.
+ * Written to be recognisable rather than pretty — a rising pair reads as
+ * "done", a falling pair as "something is wrong", a repeated note as "look".
+ */
+
+/** Something the player set in motion has now completed. */
+export function sfxConfirm(): void {
+  tone(660, 0.1, { type: "sine", gain: 0.16 });
+  tone(880, 0.16, { type: "sine", gain: 0.14, delay: 0.08 });
+  vibrate([18, 40, 18]);
+}
+
+/** Something needs attention but nothing was lost. */
+export function sfxWarn(): void {
+  tone(520, 0.12, { type: "triangle", gain: 0.15 });
+  tone(390, 0.2, { type: "triangle", gain: 0.13, delay: 0.1 });
+  vibrate([40, 60, 40]);
+}
+
+/** Something is inbound and worth looking up for. */
+export function sfxAlert(): void {
+  [784, 784, 1047].forEach((f, i) => tone(f, 0.14, { type: "sine", gain: 0.15, delay: i * 0.16 }));
+  vibrate([20, 50, 20, 50, 60]);
 }
 
 /** Soft tick while the target is aligned — pitch rises with capture progress. */

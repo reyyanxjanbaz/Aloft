@@ -56,9 +56,25 @@ export type ClientMessage = {
   playerToken?: string;
 };
 
+/**
+ * Live state of the upstream feeds, echoed to clients with every frame.
+ *
+ * The System screen cannot know any of this on its own — which provider served
+ * a frame, whether the failover has benched one, or how slow the upstream is —
+ * so the tower reports it rather than the client guessing.
+ */
+export interface FeedStatus {
+  /** Provider that served this frame, e.g. "adsb.lol". */
+  active: string | null;
+  /** Providers currently benched after a failure. */
+  benched: string[];
+  /** Round trip of the upstream call behind this frame, milliseconds. */
+  lastCallMs: number | null;
+}
+
 /** Server → client messages. */
 export type ServerMessage =
-  | { type: "planes"; now: number; aircraft: AircraftState[] }
+  | { type: "planes"; now: number; aircraft: AircraftState[]; feed?: FeedStatus }
   | { type: "error"; message: string };
 
 /** Range within which an aircraft can be hunted, and which the geofence watches. */

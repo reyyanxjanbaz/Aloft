@@ -13,16 +13,31 @@ const SHORT_DATE: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short" 
  * hue, and the sheen strengthens with rarity, so a legendary genuinely shines
  * more than a common.
  */
-export function CatchCard({ entry, onOpen }: { entry: HangarEntry; onOpen: () => void }) {
+export function CatchCard({
+  entry,
+  onOpen,
+  className = "",
+}: {
+  entry: HangarEntry;
+  /**
+   * Omitted on the reveal, where the card is the trophy itself rather than a
+   * way into the viewer. Without a handler this renders as a plain element —
+   * a button that does nothing is a trap for anyone tabbing through.
+   */
+  onOpen?: () => void;
+  className?: string;
+}) {
   const ident = entry.callsign || entry.reg || entry.hex.toUpperCase();
   const date = new Date(entry.caughtAt).toLocaleDateString(undefined, SHORT_DATE);
+  const Tag = onOpen ? "button" : "div";
+  const label = `${entry.typeLabel}, ${ident}, ${RARITY_LABEL[entry.rarity]}, caught ${date}`;
 
   return (
-    <button
-      className={`cc cc--${entry.rarity}`}
+    <Tag
+      className={`cc cc--${entry.rarity}${className ? ` ${className}` : ""}`}
       style={{ ["--rarity" as string]: `var(--rarity-${entry.rarity})` }}
       onClick={onOpen}
-      aria-label={`${entry.typeLabel}, ${ident}, ${RARITY_LABEL[entry.rarity]}, caught ${date}`}
+      {...(onOpen ? { "aria-label": label } : { role: "img", "aria-label": label })}
     >
       <span className="cc__glow" aria-hidden="true" />
       <span className="cc__card">
@@ -51,6 +66,6 @@ export function CatchCard({ entry, onOpen }: { entry: HangarEntry; onOpen: () =>
           </span>
         </span>
       </span>
-    </button>
+    </Tag>
   );
 }

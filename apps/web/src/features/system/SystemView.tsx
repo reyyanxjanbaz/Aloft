@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { CAPTURE_RADIUS_KM } from "@aloft/shared";
-import { isMuted, primeAudio, setMuted } from "../../lib/feedback";
+import { CAPTURE_RADIUS_KM, type FeedStatus } from "@aloft/shared";
+import { routeStats, type ChannelStats } from "../../lib/adsbdb";
+import { usePlanes, type LinkState } from "../../state/planes";
+import { hapticsEnabled, isMuted, primeAudio, setHaptics, setMuted } from "../../lib/feedback";
 import { platformName } from "../../lib/platform";
 import { disableSkyPings, enableSkyPings, PushError, skyPingsState } from "../../lib/push";
 import type { PlayerPosition } from "../../lib/useGeolocation";
@@ -44,19 +46,89 @@ function Switch({
   );
 }
 
-type Source = { name: string; role: string; status: string; color: string };
-const SOURCES: Source[] = [
-  { name: "adsb.lol", role: "Live ADS-B", status: "Community", color: "var(--phos)" },
-  { name: "airplanes.live", role: "Failover feed", status: "Standby", color: "var(--ink-3)" },
-  { name: "adsbdb.com", role: "Aircraft & routes", status: "Community", color: "var(--phos)" },
-  { name: "OpenStreetMap", role: "Map tiles", status: "Licensed", color: "var(--cyan)" },
-];
+interface Channel {
+  name: string;
+  role: string;
+  status: string;
+  color: string;
+}
+
+function ago(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s ago`;
+  return `${Math.round(s / 60)}m ago`;
+}
+
+/**
+ * What the feeds are actually doing, rather than four fixed labels.
+ *
+ * The ADS-B rows come from the tower — only it knows which upstream served a
+ * frame and how long that call took. The route row is first-hand: the client
+ * calls adsbdb itself. Anything genuinely unknown says so instead of being
+ * dressed up as healthy.
+ */
+function channels(
+  feed: FeedStatus | null,
+  link: LinkState,
+  lastFrameAt: number | null,
+  routes: ChannelStats
+): Channel[] {
+  const rows: Channel[] = [];
+
+  for (const name of ["adsb.lol", "airplanes.live"]) {
+    const isActive = feed?.active === name;
+    const isBenched = feed?.benched.includes(name) === true;
+    if (isBenched) {
+      rows.push({ name, role: "Live ADS-B", status: "Benched", color: "var(--amber)" });
+    } else if (isActive && link === "live") {
+      const latency = feed?.lastCallMs != null ? `${feed.lastCallMs} ms` : "live";
+      const age = lastFrameAt ? ` · ${ago(Date.now() - lastFrameAt)}` : "";
+      rows.push({ name, role: "Live ADS-B", status: `${latency}${age}`, color: "var(--phos)" });
+    } else if (link === "offline") {
+      rows.push({ name, role: "Live ADS-B", status: "No link", color: "var(--crimson)" });
+    } else if (feed) {
+      rows.push({ name, role: "Failover feed", status: "Standby", color: "var(--ink-3)" });
+    } else {
+      // Connected to a tower that doesn't report feed status — say that,
+      // rather than claiming a health we have not been told.
+      rows.push({ name, role: "Live ADS-B", status: "Not reported", color: "var(--ink-3)" });
+    }
+  }
+
+  const routeTotal = routes.ok + routes.failed;
+  rows.push({
+    name: "adsbdb.com",
+    role: "Aircraft & routes",
+    status:
+      routeTotal === 0
+        ? "Idle"
+        : routes.failed === 0
+          ? `${routes.ok} ok`
+          : `${routes.failed} of ${routeTotal} failed`,
+    color: routes.failed > 0 ? "var(--amber)" : routeTotal > 0 ? "var(--phos)" : "var(--ink-3)",
+  });
+
+  rows.push({ name: "OpenStreetMap", role: "Map tiles", status: "Licensed", color: "var(--cyan)" });
+  return rows;
+}
 
 /** Settings, install guidance, and the attribution the data licences require. */
 export function SystemView({ position }: { position: PlayerPosition }) {
   const [muted, setMutedState] = useState(isMuted());
+  const [haptics, setHapticsState] = useState(hapticsEnabled());
   const [pings, setPings] = useState<"idle" | "busy" | "on" | "failed" | "blocked">("idle");
   const [models, setModels] = useState<Array<ModelEntry & { key: string }>>([]);
+  const feed = usePlanes((s) => s.feed);
+  const link = usePlanes((s) => s.link);
+  const lastFrameAt = usePlanes((s) => s.lastFrameAt);
+  // Re-read the route tally on a timer: it is a plain counter, not reactive
+  // state, and this panel is the only thing that ever looks at it.
+  const [routes, setRoutes] = useState<ChannelStats>(routeStats);
+  useEffect(() => {
+    const id = setInterval(() => setRoutes(routeStats()), 2000);
+    return () => clearInterval(id);
+  }, []);
+  const sources = channels(feed, link, lastFrameAt, routes);
   const installed = isStandalone();
   const ios = platformName() === "ios" || /iPhone|iPad|iPod/.test(navigator.userAgent);
 
@@ -80,6 +152,11 @@ export function SystemView({ position }: { position: PlayerPosition }) {
     primeAudio();
     setMuted(!muted);
     setMutedState(!muted);
+  };
+
+  const toggleHaptics = () => {
+    setHaptics(!haptics);
+    setHapticsState(!haptics);
   };
 
   const togglePings = () => {
@@ -115,16 +192,30 @@ export function SystemView({ position }: { position: PlayerPosition }) {
         <div className="sys-panel__head">
           <h2 className="label">Controls</h2>
         </div>
+        {/* Sound and haptics are separate switches now that transients are
+            carried by sound: one mute must not silence every notification. */}
         <div className="sys-ctrl">
           <div className="sys-ctrl__text">
-            <strong>Sound and haptics</strong>
-            <span>Lock ticks, capture, and reveal cues</span>
+            <strong>Sound</strong>
+            <span>Lock ticks, capture, reveal, and alerts</span>
           </div>
           <div className="sys-ctrl__aside">
             <span className={muted ? "sys-ctrl__state" : "sys-ctrl__state sys-ctrl__state--on"}>
               {muted ? "Off" : "On"}
             </span>
-            <Switch on={!muted} onToggle={toggleSound} label="Sound and haptics" />
+            <Switch on={!muted} onToggle={toggleSound} label="Sound" />
+          </div>
+        </div>
+        <div className="sys-ctrl">
+          <div className="sys-ctrl__text">
+            <strong>Haptics</strong>
+            <span>The same cues, felt rather than heard</span>
+          </div>
+          <div className="sys-ctrl__aside">
+            <span className={haptics ? "sys-ctrl__state sys-ctrl__state--on" : "sys-ctrl__state"}>
+              {haptics ? "On" : "Off"}
+            </span>
+            <Switch on={haptics} onToggle={toggleHaptics} label="Haptics" />
           </div>
         </div>
         <div className="sys-ctrl">
@@ -160,9 +251,9 @@ export function SystemView({ position }: { position: PlayerPosition }) {
       <section className="sys-panel">
         <div className="sys-panel__head">
           <h2 className="label">Signal</h2>
-          <span className="sys-badge">4 sources</span>
+          <span className="sys-badge">{sources.length} channels</span>
         </div>
-        {SOURCES.map((s) => (
+        {sources.map((s) => (
           <div className="sys-src" key={s.name} style={{ ["--color" as string]: s.color }}>
             <span className="sys-src__dot" />
             <span className="sys-src__id">
