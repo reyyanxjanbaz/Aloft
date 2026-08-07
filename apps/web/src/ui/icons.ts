@@ -27,6 +27,7 @@ export {
   SpeakerHigh as IconSound,
   SpeakerSlash as IconMuted,
   MapPin as IconPin,
+  StackSimple as IconDeclutter,
   Path as IconRoute,
   Gauge as IconSpeed,
   Compass as IconBearing,

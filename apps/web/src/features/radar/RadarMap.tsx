@@ -5,7 +5,7 @@ import { CAPTURE_RADIUS_KM, deadReckon, destinationPoint, distanceM } from "@alo
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { projectedPosition } from "../../lib/project";
 import { releaseMapView, serverNow, setMapView, usePlanes } from "../../state/planes";
-import { applyScopeTheme } from "./scopeTheme";
+import { applyScopeTheme, type ScopeDetail } from "./scopeTheme";
 import {
   selectBlocks,
   selectPredicted,
@@ -96,9 +96,11 @@ function viewRadiusKm(map: maplibregl.Map): number {
 export function RadarMap({
   position,
   recenterSignal,
+  detail,
 }: {
   position: PlayerPosition;
   recenterSignal: number;
+  detail: ScopeDetail;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const blocksRef = useRef<HTMLDivElement>(null);
@@ -106,6 +108,10 @@ export function RadarMap({
   const readyRef = useRef(false);
   const posRef = useRef(position);
   posRef.current = position;
+  // Read through a ref by the map-creation effect, which runs once and must
+  // not be torn down and rebuilt just because the ground changed.
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -128,7 +134,7 @@ export function RadarMap({
     mapRef.current = map;
 
     map.on("load", () => {
-      applyScopeTheme(map);
+      applyScopeTheme(map, detailRef.current);
 
       void aircraftImage()
         .then((image) => {
@@ -367,6 +373,20 @@ export function RadarMap({
       ringFeature(position.lat, position.lon, CAPTURE_RADIUS_KM)
     );
   }, [position.lat, position.lon]);
+
+  /*
+   * Switching ground repaints the existing style rather than rebuilding the
+   * map. Tearing the map down would drop every source and layer, flash the
+   * scope empty, and re-download tiles for a change that is only paint.
+   *
+   * Skipped until the style has loaded, because the load handler applies the
+   * theme itself — running twice would be harmless but pointless.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    applyScopeTheme(map, detail);
+  }, [detail]);
 
   // Recenter on demand from the scope control.
   useEffect(() => {

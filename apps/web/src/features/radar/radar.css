@@ -148,24 +148,69 @@
   color: var(--amber);
 }
 
-.scope__recenter {
+/* ── Scope keys ───────────────────────────────────────── */
+
+/*
+ * The bezel keys down the right edge — recentre, and declutter. Stacked rather
+ * than spread so the whole set stays inside one thumb's reach, and sized to the
+ * same 44px as every other control in the app.
+ */
+.scope__keys {
   position: absolute;
   top: var(--s-3);
   right: var(--s-3);
+  z-index: 3;
   display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.scope__key {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
   width: 44px;
-  height: 44px;
+  min-height: 44px;
+  padding: var(--s-1) 0;
   background: var(--void);
   border: 1px solid var(--rule-hot);
   border-radius: var(--r);
   color: var(--phos);
-  transition: background var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 
-.scope__recenter:hover {
+.scope__key:hover {
   background: var(--deck-2);
+}
+
+/* The key's own legend, as printed beside a real softkey. */
+.scope__key-tag {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Armed: solid phosphor, the same language the nav's active key speaks. */
+.scope__key--on {
+  background: var(--phos);
+  border-color: var(--phos);
+  color: var(--void);
+}
+
+.scope__key--on:hover {
+  background: #16f39c;
+}
+
+.scope__key--on .scope__key-tag {
+  color: var(--phos-deep);
 }
 
 /* ── Feed states ──────────────────────────────────────── */

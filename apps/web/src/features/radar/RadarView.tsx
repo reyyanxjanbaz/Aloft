@@ -3,7 +3,8 @@ import { CAPTURE_RADIUS_KM, distanceM } from "@aloft/shared";
 import { projectedPosition } from "../../lib/project";
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { serverNow, usePlanes } from "../../state/planes";
-import { IconPin, IconTower } from "../../ui/icons";
+import { IconDeclutter, IconPin, IconTower } from "../../ui/icons";
+import { readScopeDetail, otherDetail, writeScopeDetail } from "./scopeDetail";
 import { ContactCard } from "./ContactCard";
 import { InboundBoard } from "./InboundBoard";
 import { RadarMap } from "./RadarMap";
@@ -20,6 +21,15 @@ export function RadarView({ position }: { position: PlayerPosition }) {
   const planes = usePlanes((s) => s.planes);
   const selectedHex = usePlanes((s) => s.selectedHex);
   const [recenter, setRecenter] = useState(0);
+  // Which ground the scope is drawn on. Seeded from the stored preference so
+  // the map the player chose is the one that comes back.
+  const [detail, setDetail] = useState(readScopeDetail);
+
+  const toggleDetail = () => {
+    const next = otherDetail(detail);
+    setDetail(next);
+    writeScopeDetail(next);
+  };
 
   // Projected, exactly as the map and the contact card measure it — a raw
   // position here made the HUD count disagree with the green markers.
@@ -31,7 +41,7 @@ export function RadarView({ position }: { position: PlayerPosition }) {
 
   return (
     <div className="scope">
-      <RadarMap position={position} recenterSignal={recenter} />
+      <RadarMap position={position} recenterSignal={recenter} detail={detail} />
 
       {/* The status strip used to carry link state on every screen. It now
           lives here, beside the contacts it actually describes. */}
@@ -49,13 +59,33 @@ export function RadarView({ position }: { position: PlayerPosition }) {
         {position.simulated && <span className="scope__sim label">Simulated</span>}
       </div>
 
-      <button
-        className="scope__recenter"
-        onClick={() => setRecenter((n) => n + 1)}
-        aria-label="Center the scope on your position"
-      >
-        <IconPin size={18} weight="bold" />
-      </button>
+      <div className="scope__keys">
+        <button
+          className="scope__key"
+          onClick={() => setRecenter((n) => n + 1)}
+          aria-label="Center the scope on your position"
+        >
+          <IconPin size={18} weight="bold" />
+        </button>
+        {/*
+          The declutter key, as on a real scope: it does not name a map, it
+          says how much of one you are looking at. Lit when decluttered, which
+          is the state worth announcing — the full basemap is the resting one.
+        */}
+        <button
+          className={detail === "coast" ? "scope__key scope__key--on" : "scope__key"}
+          onClick={toggleDetail}
+          aria-pressed={detail === "coast"}
+          aria-label={
+            detail === "coast"
+              ? "Declutter on, coastline only. Switch to the full basemap"
+              : "Declutter off, full basemap. Switch to coastline only"
+          }
+        >
+          <IconDeclutter size={18} weight={detail === "coast" ? "fill" : "bold"} />
+          <span className="scope__key-tag">Dcltr</span>
+        </button>
+      </div>
 
       {link === "offline" && (
         <div className="scope__offline panel">
