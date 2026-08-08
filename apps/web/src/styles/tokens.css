@@ -21,13 +21,34 @@
 
   /* Phosphor green — the signal colour. */
   --phos: #00e08a;
+  /* The lit state of anything already painted --phos. Was an unnamed #16f39c
+     repeated across three files, so the brightest colour in the product was
+     the one thing the token system did not know about. */
+  --phos-hot: #16f39c;
   --phos-dim: #0c8c59;
   --phos-deep: #053323;
 
-  /* Type. */
+  /*
+   * Type. Three steps, each a readable one.
+   *
+   * Measured against --void: 16.7:1 / 8.6:1 / 5.4:1. The dimmest step carries
+   * every `.label` in the app — the small-caps rubric above each readout — and
+   * it used to sit at 2.8:1, so the word naming a value was the one thing on
+   * the instrument you could not read.
+   *
+   * The floor is set on --deck-3, not --void: labels sit on panel headers as
+   * often as on the bare deck, and the lightest surface is what decides
+   * whether they hold. All three clear WCAG AA for body text (4.5:1) on every
+   * surface in the system, while the ladder stays wide enough (~1.6× a step)
+   * to still rank as three distinct levels.
+   *
+   * Basemap place names are deliberately NOT on this ladder: they are ground
+   * texture rather than interface text, and they stay at the old #4a5c55 in
+   * radar/scopeTheme.ts so the scope's own data blocks read in front of them.
+   */
   --ink: #dcede6;
-  --ink-2: #7e958c;
-  --ink-3: #4a5c55;
+  --ink-2: #99b0a7;
+  --ink-3: #728a80;
 
   /* Avionics status language, reused for rarity. */
   --cyan: #35d6ff;

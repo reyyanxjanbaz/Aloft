@@ -17,7 +17,11 @@ import { specFor, type AircraftSpec, type Winglet } from "./airframeSpec";
  * centre — the camera never drifts off it.
  */
 
-const TARGET_SIZE = 4; // every model is normalised to this max extent
+/**
+ * Every model is normalised to this max extent. Exported because Stage frames
+ * the camera from it — the fit is only guaranteed while the two agree.
+ */
+export const TARGET_SIZE = 4;
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
 const lerp = THREE.MathUtils.lerp;

@@ -61,7 +61,13 @@
   border-left: 1px solid var(--rule);
 }
 
-.lsk-nav:hover {
+/*
+ * `:hover` outranks `.lsk-nav--on` on specificity, so without the guard
+ * hovering the key you are already on repainted its label from --void to --ink
+ * — near-white on the solid phosphor fill, 1.4:1, and the label for the
+ * current page effectively disappeared under the pointer.
+ */
+.lsk-nav:hover:not(.lsk-nav--on) {
   color: var(--ink);
 }
 

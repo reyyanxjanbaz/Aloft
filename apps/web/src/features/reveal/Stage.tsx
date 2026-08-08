@@ -1,8 +1,58 @@
-import { Suspense, useEffect, type MutableRefObject } from "react";
+import { Suspense, useEffect, useLayoutEffect, type MutableRefObject } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { ContactShadows, Environment, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { AircraftModel } from "./AircraftModel";
+import { TARGET_SIZE } from "./Airframe";
+
+/**
+ * The radius the aircraft sweeps through as it turns.
+ *
+ * Airframe normalises every model so its largest extent is TARGET_SIZE, and an
+ * aeroplane is a cross: the wingtips and the nose/tail each sit about half that
+ * from the centre. The margin is not decoration — the fin tip is offset in two
+ * axes at once (aft *and* up), so it reaches further from the centre than any
+ * single half-extent, and without the allowance a rotating aircraft would clip
+ * its own tail on the frame edge.
+ */
+const MODEL_RADIUS = (TARGET_SIZE / 2) * 1.12;
+
+/**
+ * Pulls the camera back until the aircraft fits the frame it is actually in.
+ *
+ * The camera was a fixed position tuned on a wide viewport, and `fov` is the
+ * *vertical* field of view — so on a portrait phone (390×844, aspect 0.46) the
+ * horizontal half-angle collapsed to a quarter of the model's radius and the
+ * wings were simply cut off the sides of the screen. Every hangar reveal on a
+ * phone showed a cropped aeroplane.
+ *
+ * Solved on the narrower axis, so the fit holds in portrait and landscape
+ * alike, and re-run whenever the canvas is resized. Only the distance is
+ * touched: the viewing direction stays exactly as authored, and after the
+ * first fit the player's own zoom is left alone.
+ */
+function FitCamera() {
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const { width, height } = useThree((s) => s.size);
+  const controls = useThree((s) => s.controls) as { update?: () => void } | null;
+
+  useLayoutEffect(() => {
+    if (!width || !height) return;
+    const aspect = width / height;
+    const vHalf = THREE.MathUtils.degToRad(camera.fov) / 2;
+    const hHalf = Math.atan(Math.tan(vHalf) * aspect);
+    const distance = MODEL_RADIUS / Math.sin(Math.min(vHalf, hHalf));
+
+    camera.position.setLength(distance);
+    // The far plane has to clear the new distance or the aircraft is culled
+    // the moment the frame gets narrow enough to need a real pull-back.
+    camera.far = Math.max(camera.far, distance * 4);
+    camera.updateProjectionMatrix();
+    controls?.update?.();
+  }, [camera, controls, width, height]);
+
+  return null;
+}
 
 /**
  * The inspection stage. Lighting comes from a procedural studio environment
@@ -62,6 +112,7 @@ export function Stage({
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
     >
       <color attach="background" args={["#080d0b"]} />
+      <FitCamera />
       {snapshotRef && <SnapshotBridge snapshotRef={snapshotRef} />}
 
       <Suspense fallback={null}>

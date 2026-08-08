@@ -53,12 +53,6 @@
   transform: translateY(1px);
 }
 
-.btn:disabled {
-  color: var(--ink-3);
-  border-color: var(--rule);
-  cursor: not-allowed;
-}
-
 /* Primary: solid phosphor, no gradient — the one loud element per screen. */
 .btn--primary {
   background: var(--phos);
@@ -68,8 +62,26 @@
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: #16f39c;
-  border-color: #16f39c;
+  background: var(--phos-hot);
+  border-color: var(--phos-hot);
+}
+
+/*
+ * Disabled, and it outranks every variant above — primary included.
+ *
+ * `.btn:disabled` used to sit before `.btn--primary`, so at equal specificity
+ * the variant won: the out-of-range Hunt key kept the full phosphor fill and
+ * read as the most inviting control on the scope while being inert. A control
+ * that cannot be used must never wear the loudest paint on the screen.
+ */
+.btn:disabled,
+.btn--primary:disabled,
+.btn--quiet:disabled {
+  background: var(--deck);
+  border-color: var(--rule);
+  color: var(--ink-3);
+  font-weight: 500;
+  cursor: not-allowed;
 }
 
 .btn--block {

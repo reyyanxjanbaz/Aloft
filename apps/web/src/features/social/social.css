@@ -48,6 +48,9 @@
 
 .sp-id__name {
   width: 100%;
+  /* An editable field is a control: 44px like every other one. The underline
+     is the whole affordance here, so it has to be worth aiming at. */
+  min-height: 44px;
   padding: var(--s-1) 0;
   background: none;
   border: none;

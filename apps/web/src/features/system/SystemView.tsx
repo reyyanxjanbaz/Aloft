@@ -100,11 +100,13 @@ function channels(
     name: "adsbdb.com",
     role: "Aircraft & routes",
     status:
+      // Both outcomes are read against the same denominator: "1 ok" on its own
+      // looked like a status code rather than a tally.
       routeTotal === 0
         ? "Idle"
         : routes.failed === 0
-          ? `${routes.ok} ok`
-          : `${routes.failed} of ${routeTotal} failed`,
+          ? `${routes.ok}/${routeTotal} ok`
+          : `${routes.failed}/${routeTotal} failed`,
     color: routes.failed > 0 ? "var(--amber)" : routeTotal > 0 ? "var(--phos)" : "var(--ink-3)",
   });
 

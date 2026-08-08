@@ -46,18 +46,30 @@
   will-change: transform;
 }
 
-.dblk__id {
-  display: block;
-  font-size: var(--t-label);
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  color: var(--ink-2);
-}
-
+/*
+ * Both rows carry a void halo. The basemap draws its own place names in the
+ * same dim ink, underneath and outside this overlay's control, so over a town
+ * a callsign and a town name were printed through each other and neither
+ * could be read. The halo is what makes the block an overlay rather than one
+ * more thing on the map.
+ */
+.dblk__id,
 .dblk__row {
   display: block;
   font-size: var(--t-label);
   letter-spacing: 0.06em;
+  text-shadow:
+    0 0 3px var(--void),
+    0 0 3px var(--void),
+    0 0 6px var(--void);
+}
+
+.dblk__id {
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.dblk__row {
   color: var(--ink-3);
 }
 
@@ -206,7 +218,7 @@
 }
 
 .scope__key--on:hover {
-  background: #16f39c;
+  background: var(--phos-hot);
 }
 
 .scope__key--on .scope__key-tag {
@@ -268,6 +280,14 @@
   left: var(--s-3);
   right: var(--s-3);
   bottom: var(--s-3);
+  /*
+   * Above every overlay on the scope. Left on `auto` this sat *under* the
+   * data-block layer (z-index 2), so a contact's own readouts were printed
+   * across the card describing it — altitude and range with a stranger's
+   * callsign laid over them. The card is the focused thing while it is open;
+   * nothing on the map may cross it.
+   */
+  z-index: 6;
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
@@ -397,6 +417,11 @@
   display: grid;
   grid-template-columns: 1fr auto auto;
   align-items: baseline;
+  /* The row is a key, not a line of text: 44px like every other control in the
+     app. `align-content` centres the baseline-aligned track inside the taller
+     box, so the readouts still sit on one line. */
+  min-height: 44px;
+  align-content: center;
   gap: var(--s-3);
   width: 100%;
   padding: var(--s-2) 0 var(--s-2) var(--s-3);

@@ -58,10 +58,20 @@ async function register(name: string, id?: string, token?: string): Promise<Regi
   if (!res.ok) return { status: "http" };
   const body = (await res.json()) as { ok: boolean; player?: PlayerProfile; token?: string; reason?: string };
   if (!body.ok || !body.player) return { status: "auth" };
-  // The server only echoes a token back once ownership is proven; if it
-  // didn't (e.g. this device's cached token no longer matches), keep
-  // whatever token we already had rather than silently dropping it.
-  return { status: "ok", player: { ...body.player, token: body.token ?? token } };
+  // The server only echoes a token back once ownership is proven. A 200 that
+  // carries no token is the tower saying "this is who that id belongs to, but
+  // you have not shown me you are them" — it hands back the public profile
+  // and nothing else.
+  //
+  // That used to be reported as `ok`, so the device cached a tokenless
+  // identity, believed it was signed in, and then 401'd on every read and
+  // write for the rest of its life. Spotters showed "No link to the tower",
+  // which was the wrong diagnosis — the tower was right there — and the one
+  // control that could have fixed it (start a fresh identity) never appeared
+  // because it is gated on the auth-failed state this never reached.
+  const proven = body.token ?? token;
+  if (!proven) return { status: "auth" };
+  return { status: "ok", player: { ...body.player, token: proven } };
 }
 
 /**
@@ -71,7 +81,24 @@ async function register(name: string, id?: string, token?: string): Promise<Regi
  */
 export type EnsureOutcome = { player: CachedPlayer | null; auth: "ok" | "offline" | "auth-failed" };
 
+/**
+ * In-flight registration, shared by every concurrent caller.
+ *
+ * Registration is not idempotent for a device that has no identity yet: with
+ * no id to claim, each call *creates a player*. Two callers racing — React's
+ * development double-effect is enough — therefore minted two accounts, cached
+ * whichever answered last, and orphaned the other along with its spotter code.
+ */
+let inFlight: Promise<EnsureOutcome> | null = null;
+
 export async function ensurePlayerDetailed(): Promise<EnsureOutcome> {
+  inFlight ??= run().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function run(): Promise<EnsureOutcome> {
   const existing = cachedPlayer();
   try {
     let result = await register(existing?.name ?? suggestName(), existing?.id, existing?.token);
@@ -104,6 +131,10 @@ export async function ensurePlayer(): Promise<CachedPlayer | null> {
 /** Discards this device's identity so the next ensurePlayer registers fresh. */
 export function forgetPlayer(): void {
   localStorage.removeItem(KEY);
+  // Also drop any registration already in flight for the *old* identity —
+  // otherwise "start a fresh identity" would be handed the very result it is
+  // trying to escape.
+  inFlight = null;
 }
 
 export async function renamePlayer(name: string): Promise<CachedPlayer | null> {

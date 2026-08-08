@@ -26,12 +26,30 @@ import type { Map as MapLibreMap } from "maplibre-gl";
  */
 export type ScopeDetail = "full" | "coast";
 
-const TOKENS = {
+/**
+ * The design tokens, as literals.
+ *
+ * MapLibre paints from a style object, not from the cascade, so nothing the
+ * scope draws can read a CSS custom property. This is the one place those
+ * values are transcribed — RadarMap imports from here rather than inlining a
+ * second, independent copy of the palette, so a token change has exactly one
+ * file to follow it into.
+ *
+ * `mapLabel` is deliberately *not* --ink-3. Place names are ground texture
+ * rather than interface text: they are held below the app's readable-ink floor
+ * so the scope's own data blocks read in front of them.
+ */
+export const TOKENS = {
   void: "#040706",
   deck: "#080d0b",
   rule: "#1a2723",
   ruleHot: "#2b433a",
-  ink3: "#4a5c55",
+  phos: "#00e08a",
+  phosDim: "#0c8c59",
+  magenta: "#ff5ce1",
+  /** An out-of-range mark: present, but not a candidate. */
+  markCold: "#5c7d70",
+  mapLabel: "#4a5c55",
 };
 
 /** Fill layers that represent water, by id substring. */
@@ -98,7 +116,7 @@ export function applyScopeTheme(map: MapLibreMap, detail: ScopeDetail = "full"):
         continue;
       }
       safeSet(() => map.setLayoutProperty(id, "visibility", "visible"));
-      safeSet(() => map.setPaintProperty(id, "text-color", TOKENS.ink3));
+      safeSet(() => map.setPaintProperty(id, "text-color", TOKENS.mapLabel));
       safeSet(() => map.setPaintProperty(id, "text-halo-color", TOKENS.void));
       safeSet(() => map.setPaintProperty(id, "text-halo-width", 1.5));
       continue;

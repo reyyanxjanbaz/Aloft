@@ -5,7 +5,7 @@ import { CAPTURE_RADIUS_KM, deadReckon, destinationPoint, distanceM } from "@alo
 import type { PlayerPosition } from "../../lib/useGeolocation";
 import { projectedPosition } from "../../lib/project";
 import { releaseMapView, serverNow, setMapView, usePlanes } from "../../state/planes";
-import { applyScopeTheme, type ScopeDetail } from "./scopeTheme";
+import { applyScopeTheme, TOKENS, type ScopeDetail } from "./scopeTheme";
 import {
   selectBlocks,
   selectPredicted,
@@ -25,9 +25,16 @@ const STYLE_URL = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.j
 const LEADER_PX = 26;
 /** Bearing the leader runs along: up and to the right, as on a real scope. */
 const LEADER_BEARING = 55;
-/** Footprint a data block needs to stay readable, in screen pixels. */
-const BLOCK_W = 62;
-const BLOCK_H = 26;
+/**
+ * Footprint a data block needs to stay readable, in screen pixels.
+ *
+ * Measured, not guessed: a seven-character callsign over a `090 ↑ 470` level
+ * row renders 64px wide and 26px tall, so the old 62×26 box let two blocks
+ * that were touching pass the collision test. These carry the real size plus
+ * a hairline of air on each side.
+ */
+const BLOCK_W = 72;
+const BLOCK_H = 30;
 
 /** Ground metres per screen pixel at this zoom and latitude. */
 function metresPerPixel(lat: number, zoom: number): number {
@@ -153,7 +160,7 @@ export function RadarMap({
             type: "line",
             source: "rings",
             paint: {
-              "line-color": "#1a2723",
+              "line-color": TOKENS.rule,
               "line-width": 1,
               "line-dasharray": [3, 4],
             },
@@ -167,7 +174,7 @@ export function RadarMap({
             id: "capture",
             type: "line",
             source: "capture",
-            paint: { "line-color": "#0c8c59", "line-width": 1.25 },
+            paint: { "line-color": TOKENS.phosDim, "line-width": 1.25 },
           });
 
           // Signature: a sweep arm rotating inside the capture ring. Drawn as a
@@ -180,7 +187,7 @@ export function RadarMap({
             id: "sweep",
             type: "line",
             source: "sweep",
-            paint: { "line-color": "#00e08a", "line-width": 1, "line-opacity": 0.5 },
+            paint: { "line-color": TOKENS.phos, "line-width": 1, "line-opacity": 0.5 },
           });
 
           // Trail: where the contact has actually been, decaying backwards.
@@ -242,7 +249,7 @@ export function RadarMap({
             id: "leader",
             type: "line",
             source: "leader",
-            paint: { "line-color": "#2b433a", "line-width": 1 },
+            paint: { "line-color": TOKENS.ruleHot, "line-width": 1 },
           });
 
           map.addSource("player", {
@@ -259,8 +266,8 @@ export function RadarMap({
             source: "player",
             paint: {
               "circle-radius": 4,
-              "circle-color": "#00e08a",
-              "circle-stroke-color": "#040706",
+              "circle-color": TOKENS.phos,
+              "circle-stroke-color": TOKENS.void,
               "circle-stroke-width": 2,
             },
           });
@@ -454,7 +461,7 @@ export function RadarMap({
         const inRange = distanceM(me.lat, me.lon, lat, lon) <= CAPTURE_RADIUS_KM * 1000;
         const selected = ac.hex === selectedHex;
         // Magenta marks the active target, green marks a capturable contact.
-        const tint = selected ? "#ff5ce1" : inRange ? "#00e08a" : "#5c7d70";
+        const tint = selected ? TOKENS.magenta : inRange ? TOKENS.phos : TOKENS.markCold;
         tints.set(ac.hex, tint);
         features.push({
           type: "Feature",
@@ -475,7 +482,7 @@ export function RadarMap({
       // meant thousands of throwaway features per frame on a busy cell, for
       // marks too small and too far away to read a trail on.
       for (const ac of selectTrailed(planes.values(), me, selectedHex, tNow)) {
-        const tint = tints.get(ac.hex) ?? "#5c7d70";
+        const tint = tints.get(ac.hex) ?? TOKENS.markCold;
         // Oldest fix faintest and smallest, so the trail reads as decay rather
         // than as a dotted line of equal marks.
         const past = trailFor(ac.hex);
@@ -499,7 +506,7 @@ export function RadarMap({
       for (const ac of selectPredicted(planes.values(), me, selectedHex, tNow)) {
         const p = projectedPosition(ac, tNow);
         const [endLat, endLon] = deadReckon(p.lat, p.lon, ac.track, ac.gsKt, PREDICT_SEC);
-        const tint = tints.get(ac.hex) ?? "#5c7d70";
+        const tint = tints.get(ac.hex) ?? TOKENS.markCold;
         predictFeatures.push({
           type: "Feature",
           geometry: {
